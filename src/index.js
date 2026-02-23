@@ -1,46 +1,34 @@
 require('dotenv').config();
 
 const { setup, getDb, saveDb } = require('./db');
+const PropertyScraper = require('./scraper');
 const PropertyScanner = require('./scanner');
 const { scoreListing } = require('./scorer');
 const Reporter = require('./reporter');
 
 async function scan() {
-  const apiKey = process.env.DOMAIN_API_KEY;
-  if (!apiKey || apiKey === 'your_domain_api_key_here') {
-    console.error('❌ No Domain API key set. Get one from https://developer.domain.com.au');
-    console.log('\nTo get started:');
-    console.log('1. Sign up at https://developer.domain.com.au');
-    console.log('2. Create a project (free tier = 500 calls/day)');
-    console.log('3. Copy your API key to .env file');
-    process.exit(1);
-  }
-
   console.log('🏠 PropertyFinder — Starting scan...\n');
   await setup();
 
-  const scanner = new PropertyScanner(apiKey);
-  await scanner.init();
+  // Use scraper (no API key needed)
+  const scraper = new PropertyScraper();
+  const listings = await scraper.scanAll();
 
-  // Fetch listings from Domain
-  const rawListings = await scanner.searchListings();
-
-  if (rawListings.length === 0) {
-    console.log('No listings found. Check criteria or API key.');
+  if (listings.length === 0) {
+    console.log('No listings found.');
     return;
   }
 
-  // Parse and normalize
-  const parsed = rawListings.map(l => scanner.parseListing(l));
-  console.log(`\n📋 Parsed ${parsed.length} listings`);
-
   // Score each listing
-  const scored = parsed.map(l => ({
+  const scored = listings.map(l => ({
     ...l,
     score: scoreListing(l)
   }));
 
-  // Save to DB
+  // Save to DB using the scanner's save logic
+  const apiKey = process.env.DOMAIN_API_KEY || 'unused';
+  const scanner = new PropertyScanner(apiKey);
+  await scanner.init();
   const result = scanner.saveListings(scored);
   console.log(`\n💾 Saved: ${result.total} total | ${result.new} new | ${result.priceChanges} price changes`);
 
@@ -57,10 +45,11 @@ async function scan() {
   }
 
   if (result.new > 0) {
-    console.log(`\n🆕 ${result.new} new listings found this scan!`);
+    console.log(`🆕 ${result.new} new listings found this scan!`);
   }
 
   console.log('\n✅ Scan complete!');
+  return { scored, result };
 }
 
 async function report() {
@@ -69,12 +58,6 @@ async function report() {
   await reporter.init();
   const whatsappReport = reporter.generateWhatsAppReport();
   console.log(whatsappReport);
-}
-
-async function alertTest() {
-  console.log('🔔 Alert test — would send to WhatsApp:');
-  console.log('---');
-  await report();
 }
 
 // CLI
@@ -87,12 +70,9 @@ switch (command) {
   case 'report':
     report().catch(console.error);
     break;
-  case 'alert-test':
-    alertTest().catch(console.error);
-    break;
   case 'setup':
     setup().then(() => console.log('Done')).catch(console.error);
     break;
   default:
-    console.log('Usage: node src/index.js [scan|report|alert-test|setup]');
+    console.log('Usage: node src/index.js [scan|report|setup]');
 }
