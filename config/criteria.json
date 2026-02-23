@@ -1,0 +1,86 @@
+{
+  "search": {
+    "name": "Sydney Family Home - Al Zahra Zone",
+    "budget": {
+      "min": 1800000,
+      "max": 2800000
+    },
+    "propertyTypes": ["house", "townhouse", "duplex"],
+    "bedrooms": {
+      "min": 3
+    },
+    "bathrooms": {
+      "min": 2
+    },
+    "parking": {
+      "min": 1
+    },
+    "suburbs": [
+      "Arncliffe",
+      "Rockdale",
+      "Bexley",
+      "Banksia",
+      "Wolli Creek",
+      "Turrella",
+      "Bardwell Park",
+      "Bardwell Valley",
+      "Kingsgrove",
+      "Bexley North",
+      "Earlwood",
+      "Clemton Park",
+      "Kyeemagh",
+      "Brighton-Le-Sands"
+    ],
+    "state": "NSW",
+    "excludeKeywords": ["apartment", "unit", "studio", "granny flat"]
+  },
+  "keyLocations": [
+    {
+      "name": "Al Zahra College",
+      "address": "25 Wollongong Road, Arncliffe NSW 2205",
+      "lat": -33.9367,
+      "lng": 151.1468,
+      "weight": 10,
+      "maxDistanceKm": 5
+    },
+    {
+      "name": "Arncliffe Station",
+      "address": "Arncliffe NSW 2205",
+      "lat": -33.9362,
+      "lng": 151.1470,
+      "weight": 3
+    },
+    {
+      "name": "Rockdale Station",
+      "address": "Rockdale NSW 2216",
+      "lat": -33.9523,
+      "lng": 151.1367,
+      "weight": 2
+    },
+    {
+      "name": "Sydney Airport",
+      "address": "Sydney Airport NSW",
+      "lat": -33.9461,
+      "lng": 151.1772,
+      "weight": 1
+    }
+  ],
+  "scoring": {
+    "proximity_to_school_weight": 0.40,
+    "price_below_budget_weight": 0.20,
+    "land_size_weight": 0.15,
+    "bedrooms_weight": 0.10,
+    "condition_weight": 0.10,
+    "transport_weight": 0.05
+  },
+  "alerts": {
+    "newListing": true,
+    "priceDropPercent": 5,
+    "auctionReminder": true,
+    "auctionReminderDays": 2
+  },
+  "scan": {
+    "intervalHours": 12,
+    "soldDataLookbackMonths": 12
+  }
+}
