@@ -17,11 +17,13 @@
     },
     "suburbs": [
       "Arncliffe",
-      "Rockdale",
-      "Bexley",
       "Banksia",
       "Wolli Creek",
       "Turrella",
+      "Rockdale"
+    ],
+    "expandedSuburbs": [
+      "Bexley",
       "Bardwell Park",
       "Bardwell Valley",
       "Kingsgrove",
@@ -41,37 +43,74 @@
       "lat": -33.9367,
       "lng": 151.1468,
       "weight": 10,
-      "maxDistanceKm": 5
+      "maxDistanceKm": 2,
+      "note": "Kids walk to school - top priority"
     },
     {
       "name": "Arncliffe Station",
       "address": "Arncliffe NSW 2205",
       "lat": -33.9362,
       "lng": 151.1470,
-      "weight": 3
+      "weight": 5,
+      "note": "Kids train to school if not walking distance"
+    },
+    {
+      "name": "Banksia Station",
+      "address": "Banksia NSW 2216",
+      "lat": -33.9454,
+      "lng": 151.1413,
+      "weight": 4,
+      "note": "1 stop to Arncliffe"
+    },
+    {
+      "name": "Wolli Creek Station",
+      "address": "Wolli Creek NSW 2205",
+      "lat": -33.9275,
+      "lng": 151.1533,
+      "weight": 4,
+      "note": "1 stop to Arncliffe"
+    },
+    {
+      "name": "Turrella Station",
+      "address": "Turrella NSW 2205",
+      "lat": -33.9310,
+      "lng": 151.1432,
+      "weight": 4,
+      "note": "1 stop to Arncliffe"
     },
     {
       "name": "Rockdale Station",
       "address": "Rockdale NSW 2216",
       "lat": -33.9523,
       "lng": 151.1367,
-      "weight": 2
-    },
-    {
-      "name": "Sydney Airport",
-      "address": "Sydney Airport NSW",
-      "lat": -33.9461,
-      "lng": 151.1772,
-      "weight": 1
+      "weight": 3,
+      "note": "2 stops to Arncliffe"
     }
   ],
   "scoring": {
     "proximity_to_school_weight": 0.40,
-    "price_below_budget_weight": 0.20,
-    "land_size_weight": 0.15,
+    "train_access_weight": 0.20,
+    "price_below_budget_weight": 0.15,
+    "land_size_weight": 0.10,
     "bedrooms_weight": 0.10,
-    "condition_weight": 0.10,
-    "transport_weight": 0.05
+    "condition_weight": 0.05
+  },
+  "tiers": {
+    "tier1_walk": {
+      "description": "Walking distance to Al Zahra (<1.5km)",
+      "suburbs": ["Arncliffe"],
+      "bonus": 20
+    },
+    "tier2_one_stop": {
+      "description": "One train stop to Arncliffe",
+      "suburbs": ["Banksia", "Wolli Creek", "Turrella"],
+      "bonus": 10
+    },
+    "tier3_two_stops": {
+      "description": "Two train stops to Arncliffe",
+      "suburbs": ["Rockdale"],
+      "bonus": 5
+    }
   },
   "alerts": {
     "newListing": true,
