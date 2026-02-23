@@ -39,9 +39,9 @@
   "keyLocations": [
     {
       "name": "Al Zahra College",
-      "address": "25 Wollongong Road, Arncliffe NSW 2205",
-      "lat": -33.9367,
-      "lng": 151.1468,
+      "address": "3-5 Wollongong Road, Arncliffe NSW 2205",
+      "lat": -33.932667,
+      "lng": 151.148612,
       "weight": 10,
       "maxDistanceKm": 2,
       "note": "Kids walk to school - top priority"
