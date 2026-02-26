@@ -16,6 +16,7 @@ Usage:
     python main.py report --top N       Show top N opportunities
     python main.py stats                Show database statistics
     python main.py rescore              Re-score all active listings
+    python main.py dashboard             Launch web dashboard (map + cards)
 """
 
 import os
@@ -434,6 +435,21 @@ def cmd_stats(args):
     db.close()
 
 
+def cmd_dashboard(args):
+    """Launch the web dashboard."""
+    port = args.port or 8050
+    no_browser = args.no_browser
+
+    # Import here to avoid requiring Flask for CLI commands
+    try:
+        from dashboard.server import start_server
+    except ImportError:
+        print("Error: Flask not installed. Run: pip install flask")
+        sys.exit(1)
+
+    start_server(port=port, open_browser=not no_browser)
+
+
 def cmd_rescore(args):
     """Re-score all active listings with current config."""
     config = load_config()
@@ -515,6 +531,13 @@ Examples:
     # rescore
     subparsers.add_parser('rescore', help='Re-score all active listings')
 
+    # dashboard
+    dash_parser = subparsers.add_parser('dashboard', help='Launch web dashboard')
+    dash_parser.add_argument('--port', '-p', type=int, default=8050,
+                             help='Port to run dashboard on (default: 8050)')
+    dash_parser.add_argument('--no-browser', action='store_true',
+                             help='Do not auto-open browser')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -528,6 +551,7 @@ Examples:
         'report': cmd_report,
         'stats': cmd_stats,
         'rescore': cmd_rescore,
+        'dashboard': cmd_dashboard,
     }
 
     cmd_func = commands.get(args.command)

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PropertyFinder — Development Dashboard</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- Leaflet MarkerCluster CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+        /* Inline marker style to avoid FOUC */
+        .custom-marker {
+            background: transparent !important;
+            border: none !important;
+        }
+    </style>
+</head>
+<body>
+    <!-- Stats Bar -->
+    <div class="stats-bar">
+        <div class="logo">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.27 7.5 12 10.82 4.73 7.5 12 4.18zM4 8.82l7 3.5V19l-7-3.5V8.82zM13 19v-6.68l7-3.5V15.5L13 19z"/>
+            </svg>
+            PropertyFinder
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <div class="stat-item">
+            <span class="stat-label">Listings</span>
+            <span class="stat-value accent" id="stat-total">—</span>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <div class="stat-item">
+            <span class="stat-label">Avg Score</span>
+            <span class="stat-value yellow" id="stat-avg-score">—</span>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <div class="stat-item">
+            <span class="stat-label">New (24h)</span>
+            <span class="stat-value green" id="stat-new">—</span>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <div class="stat-item">
+            <span class="stat-label">Top Suburb</span>
+            <span class="stat-value" id="stat-top-suburb">—</span>
+        </div>
+
+        <div class="stat-divider"></div>
+
+        <div class="stat-item">
+            <span class="stat-label">Last Scan</span>
+            <span class="stat-value" style="font-size:13px;" id="stat-last-scan">—</span>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Map Panel -->
+        <div class="map-panel">
+            <div id="map"></div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <!-- Filters -->
+            <div class="filters-bar">
+                <div class="filter-group">
+                    <label>Suburb</label>
+                    <select id="filter-suburb" multiple size="1">
+                        <option value="">All Suburbs</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>Price $</label>
+                    <input type="number" id="filter-min-price" placeholder="Min" step="50000">
+                    <span style="color:var(--text-muted)">–</span>
+                    <input type="number" id="filter-max-price" placeholder="Max" step="50000">
+                </div>
+
+                <div class="filter-group">
+                    <label>Land ≥</label>
+                    <input type="number" id="filter-min-land" placeholder="sqm" step="50">
+                </div>
+
+                <div class="filter-group">
+                    <label>Score ≥</label>
+                    <input type="number" id="filter-min-score" placeholder="0" min="0" max="100" step="5">
+                </div>
+
+                <div class="filter-group">
+                    <label>Type</label>
+                    <select id="filter-type">
+                        <option value="">All Types</option>
+                    </select>
+                </div>
+
+                <label class="filter-toggle">
+                    <input type="checkbox" id="filter-new-only">
+                    New Only
+                </label>
+
+                <button class="filter-reset" onclick="resetFilters()">✕ Reset</button>
+            </div>
+
+            <!-- Listing Count -->
+            <div class="listing-count" id="listing-count">Loading...</div>
+
+            <!-- Cards -->
+            <div class="cards-container" id="cards-container">
+                <div class="loading-spinner">Loading listings...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Loading...</h2>
+                <button class="modal-close" onclick="closeDetail()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <div class="loading-spinner">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
