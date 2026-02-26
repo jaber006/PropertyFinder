@@ -3,3 +3,13 @@ node_modules/
 data/*.db
 data/*.db-journal
 *.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+v2/data/*.db
+v2/data/*.db-journal
+v2/data/*.db-wal
+v2/alerts/new-listings.json
+.venv/

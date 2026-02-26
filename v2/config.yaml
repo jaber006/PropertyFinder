@@ -1,0 +1,108 @@
+# PropertyFinder v2 — Development Opportunity Scanner
+# Configuration for watched regions, criteria, and alert preferences
+
+regions:
+  # Sydney — Inner South / St George area
+  - name: "Sydney - St George"
+    state: "NSW"
+    suburbs:
+      - Arncliffe
+      - Banksia
+      - Turrella
+      - Rockdale
+      - Bexley
+      - Wolli Creek
+      - Bardwell Park
+      - Bardwell Valley
+      - Kingsgrove
+      - Bexley North
+    price_min: 1300000
+    price_max: 2500000
+    min_land_sqm: 550
+    property_types:
+      - house
+      - townhouse
+      - duplex
+    zoning_preference:
+      - R2
+      - R3
+      - R4
+
+  # Melbourne — Growth corridors
+  - name: "Melbourne - Growth Corridors"
+    state: "VIC"
+    suburbs:
+      - Sunbury
+      - Craigieburn
+      - Mickleham
+      - Melton
+      - Melton South
+      - Rockbank
+      - Tarneit
+      - Wyndham Vale
+    price_min: 600000
+    price_max: 1500000
+    min_land_sqm: 600
+    property_types:
+      - house
+      - townhouse
+    zoning_preference:
+      - GRZ
+      - RGZ
+      - NRZ
+
+  # Sydney — Outer West growth
+  - name: "Sydney - Outer West"
+    state: "NSW"
+    suburbs:
+      - Marsden Park
+      - Box Hill
+      - Schofields
+      - Riverstone
+      - Austral
+      - Leppington
+    price_min: 800000
+    price_max: 1800000
+    min_land_sqm: 500
+    property_types:
+      - house
+      - townhouse
+    zoning_preference:
+      - R2
+      - R3
+
+# Development scoring weights (should sum to 1.0)
+scoring:
+  land_size_weight: 0.25
+  frontage_weight: 0.15
+  price_value_weight: 0.15
+  dwelling_age_weight: 0.15
+  zoning_weight: 0.15
+  keyword_weight: 0.10
+  feasibility_weight: 0.05
+
+# Development feasibility assumptions (per region)
+feasibility:
+  build_cost_per_sqm:
+    NSW: 2800
+    VIC: 2500
+    QLD: 2300
+    default: 2600
+  duplex_size_sqm: 180  # each dwelling
+  stamp_duty_rate: 0.055
+  holding_cost_months: 18
+  holding_cost_monthly_rate: 0.005  # 6% pa / 12
+  selling_costs_rate: 0.03  # agent fees + marketing
+
+# Alert preferences
+alerts:
+  min_score: 60
+  max_alerts_per_scan: 20
+  include_feasibility: true
+
+# Scanner settings
+scanner:
+  delay_between_requests_sec: 2.0
+  max_pages_per_suburb: 3
+  domain_api_page_size: 100
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

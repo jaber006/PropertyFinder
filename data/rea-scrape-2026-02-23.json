@@ -1,0 +1,228 @@
+{
+  "scrapeDate": "2026-02-23",
+  "criteria": {
+    "suburbs": ["Arncliffe", "Banksia", "Turrella", "Wolli Creek", "Rockdale"],
+    "priceRange": "$1.5M - $2.5M",
+    "propertyTypes": ["house", "duplex", "townhouse"],
+    "minLandSize": 500
+  },
+  "alreadyFound": [
+    {
+      "address": "22 Atkinson St, Arncliffe",
+      "landSize": 867,
+      "notes": "DA for 2 duplexes, TOP PICK",
+      "status": "previously found"
+    },
+    {
+      "address": "12 Carlton St, Arncliffe",
+      "landSize": 588,
+      "notes": "renovated - MJ doesn't want",
+      "status": "excluded"
+    },
+    {
+      "address": "8 Richmond St, Banksia",
+      "landSize": 739,
+      "notes": "previously found",
+      "status": "previously found"
+    }
+  ],
+  "listings": [
+    {
+      "address": "60 Lynwen Crescent",
+      "suburb": "Banksia",
+      "beds": 4,
+      "baths": 3,
+      "cars": 2,
+      "landSize": 354,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "source": "page2"
+    },
+    {
+      "address": "30 Ferrier Street",
+      "suburb": "Rockdale",
+      "beds": 4,
+      "baths": 1,
+      "cars": 1,
+      "landSize": 442.6,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "notes": "Added 2 hours ago, has study",
+      "source": "page2"
+    },
+    {
+      "address": "52 Wolli Creek Road",
+      "suburb": "Banksia",
+      "beds": 3,
+      "baths": 2,
+      "cars": 1,
+      "landSize": 556,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": "Guide $1,700,000",
+      "knockdownCandidate": true,
+      "notes": "AUCTION - external video available",
+      "source": "page2"
+    },
+    {
+      "address": "31 Loftus Street",
+      "suburb": "Turrella",
+      "beds": 3,
+      "baths": 1,
+      "cars": 1,
+      "landSize": 488,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "notes": "Auction Sat 7 Mar - just under 500m²",
+      "source": "page2"
+    },
+    {
+      "address": "51 Herbert Street",
+      "suburb": "Rockdale",
+      "beds": 6,
+      "baths": 2,
+      "cars": null,
+      "landSize": 411,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "source": "page3"
+    },
+    {
+      "address": "8 Richmond Street",
+      "suburb": "Banksia",
+      "beds": 3,
+      "baths": 2,
+      "cars": 4,
+      "landSize": 739,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": true,
+      "notes": "ALREADY FOUND - Added 6 days ago, video available",
+      "source": "page3"
+    },
+    {
+      "address": "40 Lennox Street",
+      "suburb": "Rockdale",
+      "beds": 3,
+      "baths": 4,
+      "cars": 2,
+      "landSize": 442.6,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "notes": "video available",
+      "source": "page3"
+    },
+    {
+      "address": "26 Frederick St",
+      "suburb": "Rockdale",
+      "beds": 5,
+      "baths": 3,
+      "cars": null,
+      "landSize": 125,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": null,
+      "knockdownCandidate": false,
+      "notes": "Small land - likely townhouse/duplex",
+      "source": "page4"
+    },
+    {
+      "address": "72e Tabrett Street",
+      "suburb": "Banksia",
+      "beds": 4,
+      "baths": 2,
+      "cars": 2,
+      "landSize": 505.9,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": "$2,250,000 - $2,300,000",
+      "knockdownCandidate": true,
+      "notes": "Has study, at top of budget",
+      "source": "page4"
+    },
+    {
+      "address": "91 Villiers Street",
+      "suburb": "Rockdale",
+      "beds": 5,
+      "baths": 2,
+      "cars": 2,
+      "landSize": 557,
+      "landSizeUnit": "m²",
+      "propertyType": "House",
+      "price": "$2,288,000",
+      "knockdownCandidate": true,
+      "notes": "Good land size, solid price",
+      "source": "page4"
+    }
+  ],
+  "knockdownCandidates500plus": [
+    {
+      "address": "22 Atkinson St, Arncliffe",
+      "landSize": 867,
+      "price": "unknown",
+      "notes": "DA for 2 duplexes - TOP PICK",
+      "distanceToAlZahra": "walk"
+    },
+    {
+      "address": "8 Richmond St, Banksia",
+      "landSize": 739,
+      "price": "unknown",
+      "notes": "Large block, 3/2/4",
+      "distanceToAlZahra": "1 stop"
+    },
+    {
+      "address": "52 Wolli Creek Road, Banksia",
+      "landSize": 556,
+      "price": "Guide $1,700,000",
+      "notes": "Excellent value, 3/2/1",
+      "distanceToAlZahra": "1 stop"
+    },
+    {
+      "address": "72e Tabrett Street, Banksia",
+      "landSize": 505.9,
+      "price": "$2,250,000 - $2,300,000",
+      "notes": "4+study/2/2, at top of budget",
+      "distanceToAlZahra": "1 stop"
+    },
+    {
+      "address": "91 Villiers Street, Rockdale",
+      "landSize": 557,
+      "price": "$2,288,000",
+      "notes": "5/2/2, decent block",
+      "distanceToAlZahra": "2 stops"
+    }
+  ],
+  "nearMisses400to499": [
+    {
+      "address": "31 Loftus Street, Turrella",
+      "landSize": 488,
+      "notes": "3/1/1 - 12m² short of target"
+    },
+    {
+      "address": "30 Ferrier Street, Rockdale",
+      "landSize": 442.6,
+      "notes": "4+study/1/1 - new listing"
+    },
+    {
+      "address": "40 Lennox Street, Rockdale",
+      "landSize": 442.6,
+      "notes": "3/4/2"
+    },
+    {
+      "address": "51 Herbert Street, Rockdale",
+      "landSize": 411,
+      "notes": "6/2/- - big house, smaller land"
+    }
+  ]
+}
