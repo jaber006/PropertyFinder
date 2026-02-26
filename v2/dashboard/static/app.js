@@ -1,6 +1,7 @@
 /**
  * PropertyFinder v2 — Dashboard App
- * Map + Cards + Filters + Detail Modal + Feasibility Calculator
+ * Map + Cards + Filters + Detail Panel + Feasibility Calculator
+ * + OSM Overlays (Schools, Stations) + Suburb Heatmap + Mobile Responsive
  */
 
 // ---- State ----
@@ -8,16 +9,21 @@ let allListings = [];
 let filteredListings = [];
 let map = null;
 let markersLayer = null;
-let detailMap = null;
-let detailMarker = null;
+let schoolsLayer = null;
+let stationsLayer = null;
+let heatmapLayer = null;
+let heatmapLabelsLayer = null;
 let selectedListingId = null;
 let stats = {};
+let detailPanelOpen = false;
+let heatmapActive = false;
+let mobileCardsExpanded = false;
 
 // ---- Score Helpers ----
 function scoreClass(score) {
-    if (score >= 70) return 'hot';
+    if (score >= 65) return 'hot';
     if (score >= 50) return 'good';
-    if (score >= 30) return 'below';
+    if (score >= 35) return 'below';
     return 'poor';
 }
 
@@ -26,22 +32,36 @@ function scoreBadgeClass(score) {
 }
 
 function scoreColor(score) {
-    if (score >= 70) return '#3fb950';
+    if (score >= 65) return '#3fb950';
     if (score >= 50) return '#d29922';
-    if (score >= 30) return '#db6d28';
+    if (score >= 35) return '#db6d28';
     return '#f85149';
 }
 
 function scoreLabel(score) {
-    if (score >= 70) return 'Hot';
+    if (score >= 65) return 'Hot';
     if (score >= 50) return 'Good';
-    if (score >= 30) return 'Below Avg';
+    if (score >= 35) return 'Below Avg';
     return 'Poor';
+}
+
+function barColor(value, max) {
+    const pct = max > 0 ? (value / max) : 0;
+    if (pct > 0.7) return '#3fb950';
+    if (pct > 0.4) return '#d29922';
+    return '#f85149';
+}
+
+function barColorClass(value, max) {
+    const pct = max > 0 ? (value / max) : 0;
+    if (pct > 0.7) return 'seg-green';
+    if (pct > 0.4) return 'seg-yellow';
+    return 'seg-red';
 }
 
 // ---- Format Helpers ----
 function formatPrice(display, low, high) {
-    if (display && display !== 'Contact Agent' && display !== '') return display;
+    if (display && display !== 'Contact Agent' && display !== '' && display !== 'unknown') return display;
     if (low && high && low !== high) return `$${(low/1000).toFixed(0)}K - $${(high/1000).toFixed(0)}K`;
     if (low) return `$${low.toLocaleString()}`;
     if (high) return `$${high.toLocaleString()}`;
@@ -58,6 +78,22 @@ function formatCurrency(n) {
     if (Math.abs(n) >= 1000000) return `$${(n / 1000000).toFixed(2)}M`;
     if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(0)}K`;
     return `$${n.toLocaleString()}`;
+}
+
+function formatDistance(m) {
+    if (m == null) return '—';
+    if (m >= 1000) return `${(m / 1000).toFixed(1)}km`;
+    return `${Math.round(m)}m`;
+}
+
+function roadClass(type) {
+    if (!type) return 'road-unknown';
+    const t = type.toLowerCase();
+    if (t === 'residential' || t === 'living_street') return 'road-residential';
+    if (t === 'tertiary' || t === 'moderate road') return 'road-tertiary';
+    if (t === 'secondary') return 'road-secondary';
+    if (t === 'primary' || t === 'trunk' || t.includes('primary') || t.includes('trunk')) return 'road-primary';
+    return 'road-unknown';
 }
 
 // ---- Map Setup ----
@@ -93,6 +129,12 @@ function initMap() {
         }
     });
     map.addLayer(markersLayer);
+
+    // POI layers
+    schoolsLayer = L.layerGroup().addTo(map);
+    stationsLayer = L.layerGroup().addTo(map);
+    heatmapLayer = L.layerGroup();
+    heatmapLabelsLayer = L.layerGroup();
 }
 
 function createMarkerIcon(score) {
@@ -108,6 +150,26 @@ function createMarkerIcon(score) {
         iconSize: [28, 36],
         iconAnchor: [14, 36],
         popupAnchor: [0, -36],
+    });
+}
+
+function createSchoolIcon() {
+    return L.divIcon({
+        html: '<div style="font-size:16px;text-align:center;line-height:24px;width:24px;height:24px;background:rgba(88,166,255,0.2);border:2px solid #58a6ff;border-radius:50%;display:flex;align-items:center;justify-content:center;">🏫</div>',
+        className: 'custom-marker',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -14],
+    });
+}
+
+function createStationIcon() {
+    return L.divIcon({
+        html: '<div style="font-size:14px;text-align:center;line-height:26px;width:26px;height:26px;background:rgba(248,81,73,0.2);border:2px solid #f85149;border-radius:4px;display:flex;align-items:center;justify-content:center;">🚉</div>',
+        className: 'custom-marker',
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+        popupAnchor: [0, -15],
     });
 }
 
@@ -140,7 +202,7 @@ function updateMapMarkers() {
             popupHtml += `<a class="popup-link" href="${listing.url}" target="_blank">View on REA →</a>`;
         }
 
-        popupHtml += `<br><a class="popup-link" href="#" onclick="openDetail('${listing.id}'); return false;">Full Details →</a>`;
+        popupHtml += `<br><a class="popup-link" href="#" onclick="openDetailPanel('${listing.id}'); return false;">Full Details →</a>`;
 
         marker.bindPopup(popupHtml, { maxWidth: 280 });
 
@@ -155,14 +217,162 @@ function updateMapMarkers() {
     if (bounds.length > 0) {
         map.fitBounds(bounds, { padding: [30, 30], maxZoom: 15 });
     }
+
+    // Update POI layers
+    updatePOILayers();
+}
+
+// ---- POI Overlay Layers ----
+function updatePOILayers() {
+    // Collect unique schools and stations from all filtered listings
+    // POI lat/lng now included in API response
+    const schoolsMap = new Map();
+    const stationsMap = new Map();
+
+    filteredListings.forEach(listing => {
+        if (listing.nearby_schools) {
+            listing.nearby_schools.forEach(s => {
+                if (s.lat && s.lng) {
+                    const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
+                    if (!schoolsMap.has(key)) {
+                        schoolsMap.set(key, { name: s.name, type: s.type, lat: s.lat, lng: s.lng });
+                    }
+                }
+            });
+        }
+        if (listing.nearby_stations) {
+            listing.nearby_stations.forEach(s => {
+                if (s.lat && s.lng) {
+                    const key = `${s.lat.toFixed(5)},${s.lng.toFixed(5)}`;
+                    if (!stationsMap.has(key)) {
+                        stationsMap.set(key, { name: s.name, lat: s.lat, lng: s.lng });
+                    }
+                }
+            });
+        }
+    });
+
+    // Rebuild school layer
+    schoolsLayer.clearLayers();
+    schoolsMap.forEach(school => {
+        const m = L.marker([school.lat, school.lng], { icon: createSchoolIcon() });
+        m.bindPopup(`<div class="poi-popup"><div class="poi-name">🏫 ${school.name}</div><div class="poi-type">${school.type || 'School'}</div></div>`, { maxWidth: 220 });
+        schoolsLayer.addLayer(m);
+    });
+
+    // Rebuild station layer
+    stationsLayer.clearLayers();
+    stationsMap.forEach(station => {
+        const m = L.marker([station.lat, station.lng], { icon: createStationIcon() });
+        m.bindPopup(`<div class="poi-popup"><div class="poi-name">🚉 ${station.name} Station</div></div>`, { maxWidth: 220 });
+        stationsLayer.addLayer(m);
+    });
+}
+
+function toggleLayer(layerName) {
+    const checkbox = document.getElementById(`layer-${layerName}`);
+    const checked = checkbox ? checkbox.checked : false;
+
+    if (layerName === 'schools') {
+        if (checked) map.addLayer(schoolsLayer);
+        else map.removeLayer(schoolsLayer);
+    } else if (layerName === 'stations') {
+        if (checked) map.addLayer(stationsLayer);
+        else map.removeLayer(stationsLayer);
+    } else if (layerName === 'listings') {
+        if (checked) map.addLayer(markersLayer);
+        else map.removeLayer(markersLayer);
+    }
+}
+
+// ---- Suburb Heatmap ----
+function toggleHeatmap() {
+    const checkbox = document.getElementById('layer-heatmap');
+    heatmapActive = checkbox ? checkbox.checked : false;
+
+    if (heatmapActive) {
+        buildHeatmap();
+        map.addLayer(heatmapLayer);
+        map.addLayer(heatmapLabelsLayer);
+    } else {
+        map.removeLayer(heatmapLayer);
+        map.removeLayer(heatmapLabelsLayer);
+    }
+}
+
+function buildHeatmap() {
+    heatmapLayer.clearLayers();
+    heatmapLabelsLayer.clearLayers();
+
+    // Aggregate by suburb
+    const suburbData = {};
+    filteredListings.forEach(listing => {
+        const sub = listing.suburb;
+        if (!sub) return;
+        if (!suburbData[sub]) {
+            suburbData[sub] = { scores: [], lats: [], lngs: [], count: 0 };
+        }
+        suburbData[sub].scores.push(listing.development_score || 0);
+        suburbData[sub].count++;
+        if (listing.lat && listing.lng) {
+            suburbData[sub].lats.push(listing.lat);
+            suburbData[sub].lngs.push(listing.lng);
+        }
+    });
+
+    Object.entries(suburbData).forEach(([suburb, data]) => {
+        if (data.lats.length === 0) return;
+
+        const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+        const bestScore = Math.max(...data.scores);
+        const centerLat = data.lats.reduce((a, b) => a + b, 0) / data.lats.length;
+        const centerLng = data.lngs.reduce((a, b) => a + b, 0) / data.lngs.length;
+
+        // Create a circle for the suburb
+        const color = scoreColor(avgScore);
+        const radius = Math.max(300, Math.min(800, data.count * 80));
+
+        const circle = L.circle([centerLat, centerLng], {
+            radius: radius,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.2,
+            weight: 2,
+            opacity: 0.6,
+        });
+
+        // Tooltip on hover
+        circle.bindTooltip(`
+            <div class="heatmap-tooltip">
+                <div class="ht-suburb">${suburb}</div>
+                <div class="ht-row"><span class="ht-label">Listings</span><span>${data.count}</span></div>
+                <div class="ht-row"><span class="ht-label">Avg Score</span><span style="color:${color}">${avgScore.toFixed(1)}</span></div>
+                <div class="ht-row"><span class="ht-label">Best Score</span><span>${bestScore.toFixed(1)}</span></div>
+            </div>
+        `, { className: 'heatmap-tooltip-wrapper', direction: 'top' });
+
+        heatmapLayer.addLayer(circle);
+
+        // Label
+        const label = L.divIcon({
+            html: `<div style="white-space:nowrap;font-size:11px;font-weight:600;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,0.9);">${suburb}<br><span style="font-size:10px;opacity:0.8">${data.count} · ${avgScore.toFixed(0)}avg</span></div>`,
+            className: 'suburb-heatmap-label',
+            iconSize: [100, 30],
+            iconAnchor: [50, 15],
+        });
+        heatmapLabelsLayer.addLayer(L.marker([centerLat, centerLng], { icon: label, interactive: false }));
+    });
 }
 
 // ---- Cards ----
 function renderCards() {
     const container = document.getElementById('cards-container');
     const countEl = document.getElementById('listing-count');
+    const mobileCount = document.getElementById('mobile-cards-count');
 
-    countEl.textContent = `${filteredListings.length} listing${filteredListings.length !== 1 ? 's' : ''} found`;
+    const countText = `${filteredListings.length} listing${filteredListings.length !== 1 ? 's' : ''} found`;
+    countEl.textContent = countText;
+    if (mobileCount) mobileCount.textContent = countText;
 
     if (filteredListings.length === 0) {
         container.innerHTML = `
@@ -179,12 +389,78 @@ function renderCards() {
         const badgeClass = scoreBadgeClass(score);
         const price = formatPrice(listing.price_display, listing.price_low, listing.price_high);
 
-        // Development flags
-        let flagsHtml = '';
-        if (listing.development_flags && Array.isArray(listing.development_flags)) {
-            flagsHtml = listing.development_flags.map(f =>
-                `<span class="flag-tag">${f}</span>`
+        // Score breakdown
+        const sb = listing.score_breakdown || {};
+        const cats = sb.categories || {};
+        const land = sb.land_development || 0;
+        const priceScore = sb.price_value || 0;
+        const location = sb.location_quality || 0;
+        const growth = sb.growth_potential || 0;
+
+        // Score bars
+        const bars = [
+            { label: 'Land', value: land, max: 35 },
+            { label: 'Price', value: priceScore, max: 20 },
+            { label: 'Loc', value: location, max: 30 },
+            { label: 'Growth', value: growth, max: 15 },
+        ];
+
+        let barsHtml = '<div class="card-score-bars">' + bars.map(b => {
+            const pct = b.max > 0 ? Math.min(100, (b.value / b.max) * 100) : 0;
+            const color = barColor(b.value, b.max);
+            return `<div class="score-bar-item">
+                <div class="score-bar-label">${b.label} ${b.value.toFixed(0)}/${b.max}</div>
+                <div class="score-bar-track"><div class="score-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+            </div>`;
+        }).join('') + '</div>';
+
+        // POI info
+        let poiHtml = '<div class="card-poi-info">';
+
+        // Top 3 schools
+        const schools = (listing.nearby_schools || []).slice(0, 3);
+        if (schools.length > 0) {
+            poiHtml += schools.map(s =>
+                `<div class="card-poi-row"><span class="poi-icon">🏫</span><span class="poi-text">${s.name}</span><span style="color:var(--text-muted);font-size:11px">${formatDistance(s.distance_m)}</span></div>`
             ).join('');
+        }
+
+        // Nearest station
+        const stations = (listing.nearby_stations || []).slice(0, 1);
+        if (stations.length > 0) {
+            poiHtml += `<div class="card-poi-row"><span class="poi-icon">🚉</span><span class="poi-text">${stations[0].name} Station</span><span style="color:var(--text-muted);font-size:11px">${formatDistance(stations[0].distance_m)}</span></div>`;
+        }
+
+        poiHtml += '</div>';
+
+        // Road type
+        let roadHtml = '';
+        if (listing.road_type && listing.road_type !== 'Unknown') {
+            const rc = roadClass(listing.road_type);
+            roadHtml = `<span class="road-indicator ${rc}"><i class="fas fa-road"></i> ${listing.road_type}${listing.road_name ? ' — ' + listing.road_name : ''}</span>`;
+        }
+
+        // Flags: location + growth + development
+        let flagsHtml = '';
+        const allFlags = [];
+        if (listing.location_flags && Array.isArray(listing.location_flags)) {
+            listing.location_flags.forEach(f => allFlags.push({ text: f, cls: 'location-flag' }));
+        }
+        if (listing.growth_flags && Array.isArray(listing.growth_flags)) {
+            listing.growth_flags.forEach(f => allFlags.push({ text: f, cls: 'growth-flag' }));
+        }
+        if (listing.development_flags && Array.isArray(listing.development_flags)) {
+            listing.development_flags.forEach(f => {
+                // Don't duplicate flags that are already in location/growth
+                if (!allFlags.find(af => af.text === f)) {
+                    allFlags.push({ text: f, cls: '' });
+                }
+            });
+        }
+        if (allFlags.length > 0) {
+            flagsHtml = '<div class="card-flags">' + allFlags.slice(0, 5).map(f =>
+                `<span class="flag-tag ${f.cls}">${f.text}</span>`
+            ).join('') + (allFlags.length > 5 ? `<span class="flag-tag" style="opacity:0.5">+${allFlags.length - 5} more</span>` : '') + '</div>';
         }
 
         // Feasibility summary
@@ -205,7 +481,7 @@ function renderCards() {
         const newBadge = listing.is_new ? `<span class="new-badge">NEW</span>` : '';
 
         return `
-            <div class="listing-card" data-id="${listing.id}" onclick="openDetail('${listing.id}')">
+            <div class="listing-card" data-id="${listing.id}" onclick="openDetailPanel('${listing.id}')">
                 ${newBadge}
                 <div class="card-header">
                     <div class="card-address">
@@ -214,6 +490,7 @@ function renderCards() {
                     </div>
                     <div class="score-badge ${badgeClass}">${score.toFixed(0)}</div>
                 </div>
+                ${barsHtml}
                 <div class="card-meta">
                     <span class="card-price">${price}</span>
                     ${listing.land_size_sqm ? `<span><span class="icon">📐</span>${listing.land_size_sqm.toFixed(0)} sqm</span>` : ''}
@@ -221,7 +498,9 @@ function renderCards() {
                     ${listing.bathrooms ? `<span><span class="icon">🚿</span>${listing.bathrooms}</span>` : ''}
                     ${listing.parking ? `<span><span class="icon">🚗</span>${listing.parking}</span>` : ''}
                 </div>
-                ${flagsHtml ? `<div class="card-flags">${flagsHtml}</div>` : ''}
+                ${poiHtml}
+                ${roadHtml ? `<div style="margin-bottom:6px">${roadHtml}</div>` : ''}
+                ${flagsHtml}
                 ${feasHtml}
                 ${listing.url ? `<a class="card-link" href="${listing.url}" target="_blank" onclick="event.stopPropagation()">View on REA →</a>` : ''}
             </div>`;
@@ -237,178 +516,326 @@ function highlightCard(id) {
     }
 }
 
-// ---- Detail Modal ----
-async function openDetail(id) {
+// ---- Detail Side Panel ----
+async function openDetailPanel(id) {
     selectedListingId = id;
-    const overlay = document.getElementById('modal-overlay');
-    const body = document.getElementById('modal-body');
+    const panel = document.getElementById('detail-panel');
+    const body = document.getElementById('detail-panel-body');
+    const title = document.getElementById('detail-panel-title');
 
-    overlay.classList.add('active');
+    panel.classList.add('open');
+    detailPanelOpen = true;
     body.innerHTML = '<div class="loading-spinner">Loading...</div>';
+    title.textContent = 'Loading...';
 
+    // Find listing in local data first for instant render
+    const local = filteredListings.find(l => l.id === id) || allListings.find(l => l.id === id);
+    if (local) {
+        renderDetailPanel(local);
+    }
+
+    // Also fetch full detail from API for complete data
     try {
         const resp = await fetch(`/api/listings/${encodeURIComponent(id)}`);
-        if (!resp.ok) throw new Error('Not found');
-        const listing = await resp.json();
-        renderDetail(listing);
+        if (resp.ok) {
+            const listing = await resp.json();
+            renderDetailPanel(listing);
+        }
     } catch (e) {
-        body.innerHTML = `<div class="empty-state"><h3>Error loading listing</h3><p>${e.message}</p></div>`;
+        if (!local) {
+            body.innerHTML = `<div class="empty-state"><h3>Error loading listing</h3><p>${e.message}</p></div>`;
+        }
     }
+
+    highlightCard(id);
 }
 
-function renderDetail(listing) {
-    const body = document.getElementById('modal-body');
-    const header = document.getElementById('modal-title');
+function closeDetailPanel() {
+    const panel = document.getElementById('detail-panel');
+    panel.classList.remove('open');
+    detailPanelOpen = false;
+    selectedListingId = null;
+    document.querySelectorAll('.listing-card').forEach(el => el.classList.remove('active'));
+}
 
-    header.textContent = listing.address || 'Unknown Address';
+function renderDetailPanel(listing) {
+    const body = document.getElementById('detail-panel-body');
+    const title = document.getElementById('detail-panel-title');
+
+    title.textContent = listing.address || 'Unknown Address';
 
     const score = listing.development_score || 0;
     const price = formatPrice(listing.price_display, listing.price_low, listing.price_high);
     const badgeClass = scoreBadgeClass(score);
+    const color = scoreColor(score);
+
+    // Score breakdown chart
+    const sb = listing.score_breakdown || {};
+    const scoreItems = [
+        { label: 'Land', value: sb.land_development || 0, max: 35 },
+        { label: 'Price', value: sb.price_value || 0, max: 20 },
+        { label: 'Location', value: sb.location_quality || 0, max: 30 },
+        { label: 'Growth', value: sb.growth_potential || 0, max: 15 },
+    ];
+
+    let chartHtml = '<div class="dp-score-chart">';
+    scoreItems.forEach(item => {
+        const pct = item.max > 0 ? Math.min(100, (item.value / item.max) * 100) : 0;
+        const c = barColor(item.value, item.max);
+        chartHtml += `
+            <div class="dp-bar-row">
+                <div class="dp-bar-label">${item.label}</div>
+                <div class="dp-bar-track">
+                    <div class="dp-bar-fill" style="width:${pct}%;background:${c}">
+                        <span class="dp-bar-value">${item.value.toFixed(1)}/${item.max}</span>
+                    </div>
+                </div>
+            </div>`;
+    });
+    chartHtml += '</div>';
+
+    // Google Maps / Street View
+    let streetViewHtml = '';
+    if (listing.lat && listing.lng) {
+        const mapsUrl = `https://www.google.com/maps/@${listing.lat},${listing.lng},3a,75y,0h,90t/data=!3m6!1e1!3m4!1s!2e0!7i16384!8i8192`;
+        streetViewHtml = `
+            <div class="dp-streetview">
+                <a href="${mapsUrl}" target="_blank">
+                    <i class="fas fa-street-view"></i>
+                    <span>Open Street View</span>
+                </a>
+            </div>`;
+    }
+
+    // POI lists
+    let poisHtml = '';
+    const poiCategories = [
+        { key: 'nearby_schools', icon: '🏫', label: 'Schools', items: listing.nearby_schools || [] },
+        { key: 'nearby_stations', icon: '🚉', label: 'Stations', items: listing.nearby_stations || [] },
+        { key: 'nearby_supermarkets', icon: '🛒', label: 'Shops', items: listing.nearby_supermarkets || [] },
+        { key: 'nearby_hospitals', icon: '🏥', label: 'Hospitals', items: listing.nearby_hospitals || [] },
+        { key: 'nearby_parks', icon: '🌳', label: 'Parks', items: listing.nearby_parks || [] },
+    ];
+
+    poisHtml = '<div class="dp-section"><div class="dp-section-title"><i class="fas fa-map-marker-alt"></i> Nearby POIs</div><div class="dp-poi-list">';
+    poiCategories.forEach(cat => {
+        cat.items.forEach(item => {
+            const name = item.name || 'Unknown';
+            if (name === 'Unknown') return;
+            poisHtml += `
+                <div class="dp-poi-item">
+                    <span class="dp-poi-icon">${cat.icon}</span>
+                    <span class="dp-poi-name">${name}${item.type ? ` (${item.type})` : ''}</span>
+                    <span class="dp-poi-dist">${formatDistance(item.distance_m)}</span>
+                </div>`;
+        });
+    });
+    poisHtml += '</div></div>';
+
+    // Road classification
+    let roadHtml = '';
+    if (listing.road_type && listing.road_type !== 'Unknown') {
+        const rc = roadClass(listing.road_type);
+        roadHtml = `<div class="dp-row"><span class="label"><i class="fas fa-road"></i> Road</span><span class="value"><span class="road-indicator ${rc}">${listing.road_type}</span>${listing.road_name ? ' — ' + listing.road_name : ''}</span></div>`;
+    }
 
     // Flags
     let flagsHtml = '';
+    const allFlags = [];
+    if (listing.location_flags && Array.isArray(listing.location_flags)) {
+        listing.location_flags.forEach(f => allFlags.push({ text: f, cls: 'location-flag' }));
+    }
+    if (listing.growth_flags && Array.isArray(listing.growth_flags)) {
+        listing.growth_flags.forEach(f => allFlags.push({ text: f, cls: 'growth-flag' }));
+    }
     if (listing.development_flags && Array.isArray(listing.development_flags)) {
-        flagsHtml = listing.development_flags.map(f => `<span class="flag-tag">${f}</span>`).join('');
+        listing.development_flags.forEach(f => {
+            if (!allFlags.find(af => af.text === f)) allFlags.push({ text: f, cls: '' });
+        });
+    }
+    if (allFlags.length > 0) {
+        flagsHtml = '<div class="dp-section"><div class="dp-section-title"><i class="fas fa-tags"></i> Flags</div><div class="card-flags">' +
+            allFlags.map(f => `<span class="flag-tag ${f.cls}">${f.text}</span>`).join('') +
+            '</div></div>';
     }
 
-    // Score breakdown
-    let breakdownHtml = '';
-    if (listing.score_breakdown && typeof listing.score_breakdown === 'object') {
-        const sb = listing.score_breakdown;
-        breakdownHtml = Object.entries(sb).map(([k, v]) => `
-            <div class="detail-row">
-                <span class="label">${k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</span>
-                <span class="value">${v}</span>
-            </div>`).join('');
-    }
-
-    // Feasibility data (for pre-filling calculator)
+    // Feasibility data for pre-filling calculator
     const feas = listing.feasibility_json || {};
     const purchasePrice = listing.price_low || listing.price_high || 0;
     const buildCostSqm = feas.build_cost_per_sqm || 2800;
     const numDwellings = feas.dev_type === 'duplex' ? 2 : 1;
     const endValueEach = feas.end_value ? Math.round(feas.end_value / numDwellings) : 0;
+    const landSize = listing.land_size_sqm || 0;
 
+    // Build HTML
     body.innerHTML = `
-        <!-- Detail Map -->
-        ${listing.lat && listing.lng ? '<div class="detail-map-container"><div id="detail-map"></div></div>' : ''}
+        ${streetViewHtml}
 
-        <div class="detail-grid">
-            <!-- Property Details -->
-            <div class="detail-section">
-                <h3>Property Details</h3>
-                <div class="detail-row"><span class="label">Price</span><span class="value">${price}</span></div>
-                <div class="detail-row"><span class="label">Type</span><span class="value">${listing.property_type || '—'}</span></div>
-                <div class="detail-row"><span class="label">Land Size</span><span class="value">${listing.land_size_sqm ? listing.land_size_sqm.toFixed(0) + ' sqm' : '—'}</span></div>
-                ${listing.frontage_m ? `<div class="detail-row"><span class="label">Frontage</span><span class="value">${listing.frontage_m.toFixed(1)}m</span></div>` : ''}
-                <div class="detail-row"><span class="label">Beds</span><span class="value">${listing.bedrooms || '—'}</span></div>
-                <div class="detail-row"><span class="label">Baths</span><span class="value">${listing.bathrooms || '—'}</span></div>
-                <div class="detail-row"><span class="label">Parking</span><span class="value">${listing.parking || '—'}</span></div>
-                ${listing.year_built ? `<div class="detail-row"><span class="label">Year Built</span><span class="value">${listing.year_built}</span></div>` : ''}
-                ${listing.zoning ? `<div class="detail-row"><span class="label">Zoning</span><span class="value">${listing.zoning}</span></div>` : ''}
-                <div class="detail-row"><span class="label">Suburb</span><span class="value">${listing.suburb || '—'}, ${listing.state || ''}</span></div>
-                ${listing.agent_name ? `<div class="detail-row"><span class="label">Agent</span><span class="value">${listing.agent_name}</span></div>` : ''}
-                ${listing.agency ? `<div class="detail-row"><span class="label">Agency</span><span class="value">${listing.agency}</span></div>` : ''}
-                <div class="detail-row"><span class="label">Listed</span><span class="value">${listing.listing_date || '—'}</span></div>
-                <div class="detail-row"><span class="label">First Seen</span><span class="value">${listing.first_seen || '—'}</span></div>
-            </div>
-
-            <!-- Score Breakdown -->
-            <div class="detail-section">
-                <h3>Development Score: <span class="score-badge ${badgeClass}" style="font-size:16px;padding:4px 12px;">${score.toFixed(1)}</span></h3>
-                ${breakdownHtml}
-                ${flagsHtml ? `<div style="margin-top:12px;">${flagsHtml}</div>` : ''}
+        <!-- Score Header -->
+        <div class="dp-score-header">
+            <div class="dp-score-big ${badgeClass}" style="background:${color}22;color:${color}">${score.toFixed(0)}</div>
+            <div>
+                <div style="font-weight:600;font-size:15px">${scoreLabel(score)} Development Potential</div>
+                <div class="dp-score-label">${listing.suburb || ''} · ${listing.property_type || ''}</div>
             </div>
         </div>
 
-        <!-- Existing Feasibility -->
-        ${feas.total_cost ? `
-        <div class="detail-section" style="margin-bottom:16px;">
-            <h3>Auto Feasibility (${(feas.dev_type || '').replace(/_/g, ' ')})</h3>
-            <div class="detail-row"><span class="label">Purchase Total</span><span class="value">${formatCurrency(feas.purchase_total)}</span></div>
-            <div class="detail-row"><span class="label">Build Cost</span><span class="value">${formatCurrency(feas.total_build)}</span></div>
-            <div class="detail-row"><span class="label">Holding Cost (${feas.holding_months}mo)</span><span class="value">${formatCurrency(feas.holding_cost)}</span></div>
-            <div class="detail-row"><span class="label">Total Cost</span><span class="value" style="font-weight:700">${formatCurrency(feas.total_cost)}</span></div>
-            <div class="detail-row"><span class="label">End Value</span><span class="value">${formatCurrency(feas.end_value)}</span></div>
-            <div class="detail-row"><span class="label">Selling Costs</span><span class="value">${formatCurrency(feas.selling_costs)}</span></div>
-            <div class="detail-row">
-                <span class="label" style="font-weight:700">Estimated Profit</span>
-                <span class="value ${feas.profit >= 0 ? 'profit' : 'loss'}" style="font-weight:700">
-                    ${feas.profit >= 0 ? '+' : ''}${formatCurrency(feas.profit)} (${feas.profit_margin_pct}%)
-                </span>
-            </div>
-        </div>` : ''}
+        <!-- Score Breakdown Chart -->
+        ${chartHtml}
+
+        <!-- Property Details -->
+        <div class="dp-section">
+            <div class="dp-section-title"><i class="fas fa-home"></i> Property</div>
+            <div class="dp-row"><span class="label">Price</span><span class="value" style="font-weight:700">${price}</span></div>
+            <div class="dp-row"><span class="label">Type</span><span class="value">${listing.property_type || '—'}</span></div>
+            <div class="dp-row"><span class="label">Land</span><span class="value">${listing.land_size_sqm ? listing.land_size_sqm.toFixed(0) + ' sqm' : '—'}</span></div>
+            ${listing.frontage_m ? `<div class="dp-row"><span class="label">Frontage</span><span class="value">${listing.frontage_m.toFixed(1)}m</span></div>` : ''}
+            <div class="dp-row"><span class="label">Beds / Bath / Park</span><span class="value">${listing.bedrooms || '—'} / ${listing.bathrooms || '—'} / ${listing.parking || '—'}</span></div>
+            ${listing.zoning ? `<div class="dp-row"><span class="label">Zoning</span><span class="value">${listing.zoning}</span></div>` : ''}
+            ${roadHtml}
+            <div class="dp-row"><span class="label">Listed</span><span class="value">${listing.listing_date || '—'}</span></div>
+            ${listing.agent_name ? `<div class="dp-row"><span class="label">Agent</span><span class="value">${listing.agent_name}</span></div>` : ''}
+        </div>
+
+        <!-- Flags -->
+        ${flagsHtml}
+
+        <!-- Nearby POIs -->
+        ${poisHtml}
 
         <!-- Feasibility Calculator -->
-        <div class="calc-section">
-            <h3>📊 Feasibility Calculator</h3>
-            <div class="calc-grid">
-                <div class="calc-field">
-                    <label>Purchase Price ($)</label>
-                    <input type="number" id="calc-price" value="${purchasePrice}" oninput="updateCalc()">
+        <div class="dp-section">
+            <div class="dp-section-title"><i class="fas fa-calculator"></i> Feasibility Calculator</div>
+            <div class="dp-calc">
+                <!-- Scenario Tabs -->
+                <div class="dp-calc-tabs">
+                    <div class="dp-calc-tab active" data-scenario="development" onclick="switchScenario('development', '${listing.id}')">🏗️ Development</div>
+                    <div class="dp-calc-tab" data-scenario="granny" onclick="switchScenario('granny', '${listing.id}')">🏠 Granny Flat</div>
+                    <div class="dp-calc-tab" data-scenario="reno" onclick="switchScenario('reno', '${listing.id}')">🔨 Renovation</div>
                 </div>
-                <div class="calc-field">
-                    <label>Build Cost ($/sqm)</label>
-                    <input type="number" id="calc-build-cost" value="${buildCostSqm}" oninput="updateCalc()">
+
+                <!-- Development Scenario -->
+                <div id="calc-scenario-development" class="calc-scenario">
+                    <div class="dp-calc-grid">
+                        <div class="dp-calc-field">
+                            <label>Purchase Price ($)</label>
+                            <input type="number" id="calc-price" value="${purchasePrice}" oninput="updateDevCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Build Cost ($/sqm)</label>
+                            <input type="number" id="calc-build-cost" value="${buildCostSqm}" oninput="updateDevCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label># Dwellings</label>
+                            <input type="number" id="calc-dwellings" value="${numDwellings}" min="1" max="10" oninput="updateDevCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Size Each (sqm)</label>
+                            <input type="number" id="calc-dwelling-size" value="180" oninput="updateDevCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>End Value/Dwelling ($)</label>
+                            <input type="number" id="calc-end-value" value="${endValueEach}" oninput="updateDevCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Holding (months)</label>
+                            <input type="number" id="calc-months" value="18" oninput="updateDevCalc()">
+                        </div>
+                    </div>
+                    <div class="dp-calc-result">
+                        <div class="result-label">Estimated Profit</div>
+                        <div class="result-value" id="calc-dev-profit">—</div>
+                        <div class="result-detail" id="calc-dev-detail"></div>
+                    </div>
                 </div>
-                <div class="calc-field">
-                    <label>Number of Dwellings</label>
-                    <input type="number" id="calc-dwellings" value="${numDwellings}" min="1" max="10" oninput="updateCalc()">
+
+                <!-- Granny Flat Scenario -->
+                <div id="calc-scenario-granny" class="calc-scenario" style="display:none">
+                    <div class="dp-calc-grid">
+                        <div class="dp-calc-field">
+                            <label>Purchase Price ($)</label>
+                            <input type="number" id="calc-gf-price" value="${purchasePrice}" oninput="updateGrannyCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>GF Build Cost ($)</label>
+                            <input type="number" id="calc-gf-build" value="150000" oninput="updateGrannyCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Main Rent ($/wk)</label>
+                            <input type="number" id="calc-gf-main-rent" value="550" oninput="updateGrannyCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>GF Rent ($/wk)</label>
+                            <input type="number" id="calc-gf-rent" value="450" oninput="updateGrannyCalc()">
+                        </div>
+                    </div>
+                    <div class="dp-calc-result">
+                        <div class="result-label">Combined Yield</div>
+                        <div class="result-value" id="calc-gf-yield">—</div>
+                        <div class="result-detail" id="calc-gf-detail"></div>
+                    </div>
+                    <div class="dp-yield-box" id="calc-gf-breakdown">
+                        <div class="dp-yield-row"><span class="label">Total Investment</span><span class="value" id="gf-total-invest">—</span></div>
+                        <div class="dp-yield-row"><span class="label">Total Weekly Rent</span><span class="value" id="gf-total-rent">—</span></div>
+                        <div class="dp-yield-row"><span class="label">Annual Gross Income</span><span class="value" id="gf-annual">—</span></div>
+                        <div class="dp-yield-row"><span class="label">Yield WITHOUT GF</span><span class="value" id="gf-yield-without">—</span></div>
+                        <div class="dp-yield-row"><span class="label">Yield WITH GF</span><span class="value" style="color:var(--green)" id="gf-yield-with">—</span></div>
+                    </div>
                 </div>
-                <div class="calc-field">
-                    <label>Dwelling Size (sqm each)</label>
-                    <input type="number" id="calc-dwelling-size" value="180" oninput="updateCalc()">
+
+                <!-- Renovation Scenario -->
+                <div id="calc-scenario-reno" class="calc-scenario" style="display:none">
+                    <div class="dp-calc-grid">
+                        <div class="dp-calc-field">
+                            <label>Purchase Price ($)</label>
+                            <input type="number" id="calc-reno-price" value="${purchasePrice}" oninput="updateRenoCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Reno Cost ($)</label>
+                            <input type="number" id="calc-reno-cost" value="80000" oninput="updateRenoCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Uplift % of Purchase</label>
+                            <input type="number" id="calc-reno-uplift" value="20" min="0" max="100" oninput="updateRenoCalc()">
+                        </div>
+                        <div class="dp-calc-field">
+                            <label>Holding (months)</label>
+                            <input type="number" id="calc-reno-months" value="6" oninput="updateRenoCalc()">
+                        </div>
+                    </div>
+                    <div class="dp-calc-result">
+                        <div class="result-label">Estimated Profit</div>
+                        <div class="result-value" id="calc-reno-profit">—</div>
+                        <div class="result-detail" id="calc-reno-detail"></div>
+                    </div>
                 </div>
-                <div class="calc-field">
-                    <label>End Value per Dwelling ($)</label>
-                    <input type="number" id="calc-end-value" value="${endValueEach}" oninput="updateCalc()">
-                </div>
-                <div class="calc-field">
-                    <label>Holding Period (months)</label>
-                    <input type="number" id="calc-months" value="18" oninput="updateCalc()">
-                </div>
-            </div>
-            <div class="calc-result" id="calc-result">
-                <div class="result-label">Estimated Profit</div>
-                <div class="result-value" id="calc-profit-value">—</div>
-                <div class="result-margin" id="calc-margin-value"></div>
             </div>
         </div>
 
         <!-- Actions -->
-        <div class="detail-actions">
-            ${listing.url ? `<a class="btn btn-primary" href="${listing.url}" target="_blank">🔗 View on REA</a>` : ''}
-            ${listing.lat && listing.lng ? `<a class="btn btn-outline" href="https://www.google.com/maps/@${listing.lat},${listing.lng},3a,75y,0h,90t/data=!3m6!1e1!3m4!1s!2e0!7i16384!8i8192" target="_blank">🗺️ Street View</a>` : ''}
-            <a class="btn btn-outline" href="https://www.google.com/maps/search/${encodeURIComponent((listing.address || '') + ' ' + (listing.suburb || '') + ' NSW')}" target="_blank">📍 Google Maps</a>
+        <div class="dp-actions">
+            ${listing.url ? `<a class="btn btn-primary" href="${listing.url}" target="_blank"><i class="fas fa-external-link-alt"></i> REA</a>` : ''}
+            ${listing.lat && listing.lng ? `<a class="btn btn-outline" href="https://www.google.com/maps/@${listing.lat},${listing.lng},3a,75y,0h,90t/data=!3m6!1e1!3m4!1s!2e0!7i16384!8i8192" target="_blank"><i class="fas fa-street-view"></i> Street View</a>` : ''}
+            <a class="btn btn-outline" href="https://www.google.com/maps/search/${encodeURIComponent((listing.address || '') + ' ' + (listing.suburb || '') + ' NSW')}" target="_blank"><i class="fas fa-map"></i> Maps</a>
         </div>
     `;
 
-    // Init detail map
-    if (listing.lat && listing.lng) {
-        setTimeout(() => {
-            if (detailMap) {
-                detailMap.remove();
-            }
-            detailMap = L.map('detail-map', {
-                center: [listing.lat, listing.lng],
-                zoom: 16,
-                zoomControl: false,
-            });
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                maxZoom: 19,
-            }).addTo(detailMap);
-            detailMarker = L.marker([listing.lat, listing.lng], {
-                icon: createMarkerIcon(score),
-            }).addTo(detailMap);
-        }, 100);
-    }
-
-    // Run calc
-    updateCalc();
+    // Run calculators
+    updateDevCalc();
+    updateGrannyCalc();
+    updateRenoCalc();
 }
 
-function updateCalc() {
+// ---- Feasibility Calculators ----
+function switchScenario(scenario, listingId) {
+    document.querySelectorAll('.dp-calc-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.calc-scenario').forEach(s => s.style.display = 'none');
+
+    document.querySelector(`.dp-calc-tab[data-scenario="${scenario}"]`).classList.add('active');
+    document.getElementById(`calc-scenario-${scenario}`).style.display = 'block';
+}
+
+function updateDevCalc() {
     const price = parseFloat(document.getElementById('calc-price')?.value) || 0;
     const buildCostSqm = parseFloat(document.getElementById('calc-build-cost')?.value) || 0;
     const dwellings = parseInt(document.getElementById('calc-dwellings')?.value) || 1;
@@ -416,7 +843,6 @@ function updateCalc() {
     const endValueEach = parseFloat(document.getElementById('calc-end-value')?.value) || 0;
     const months = parseInt(document.getElementById('calc-months')?.value) || 18;
 
-    // Costs
     const stampDuty = price * 0.055;
     const legals = 5000;
     const purchaseTotal = price + stampDuty + legals;
@@ -429,37 +855,94 @@ function updateCalc() {
 
     const totalInvested = purchaseTotal + totalBuild;
     const holdingCost = totalInvested * 0.005 * months;
-
     const totalCost = purchaseTotal + totalBuild + holdingCost;
 
-    // Revenue
     const endValue = endValueEach * dwellings;
     const sellingCosts = endValue * 0.03;
     const netProceeds = endValue - sellingCosts;
-
-    // Profit
     const profit = netProceeds - totalCost;
     const margin = totalCost > 0 ? ((profit / totalCost) * 100).toFixed(1) : 0;
 
-    const profitEl = document.getElementById('calc-profit-value');
-    const marginEl = document.getElementById('calc-margin-value');
+    const profitEl = document.getElementById('calc-dev-profit');
+    const detailEl = document.getElementById('calc-dev-detail');
 
     if (profitEl) {
         const isProfit = profit >= 0;
         profitEl.style.color = isProfit ? 'var(--profit)' : 'var(--loss)';
         profitEl.textContent = `${isProfit ? '+' : ''}${formatCurrency(profit)}`;
-        marginEl.style.color = isProfit ? 'var(--profit)' : 'var(--loss)';
-        marginEl.textContent = `Margin: ${margin}% | Total Cost: ${formatCurrency(totalCost)} | End Value: ${formatCurrency(endValue)}`;
+        detailEl.style.color = isProfit ? 'var(--profit)' : 'var(--loss)';
+        detailEl.textContent = `${margin}% margin · Cost: ${formatCurrency(totalCost)} · Value: ${formatCurrency(endValue)}`;
     }
 }
 
-function closeDetail() {
-    document.getElementById('modal-overlay').classList.remove('active');
-    if (detailMap) {
-        detailMap.remove();
-        detailMap = null;
+function updateGrannyCalc() {
+    const price = parseFloat(document.getElementById('calc-gf-price')?.value) || 0;
+    const gfBuild = parseFloat(document.getElementById('calc-gf-build')?.value) || 150000;
+    const mainRent = parseFloat(document.getElementById('calc-gf-main-rent')?.value) || 0;
+    const gfRent = parseFloat(document.getElementById('calc-gf-rent')?.value) || 0;
+
+    const stampDuty = price * 0.055;
+    const totalInvestment = price + stampDuty + gfBuild;
+    const totalWeeklyRent = mainRent + gfRent;
+    const annualIncome = totalWeeklyRent * 52;
+    const grossYield = totalInvestment > 0 ? ((annualIncome / totalInvestment) * 100).toFixed(2) : 0;
+
+    // Yield without GF
+    const investWithout = price + stampDuty;
+    const annualWithout = mainRent * 52;
+    const yieldWithout = investWithout > 0 ? ((annualWithout / investWithout) * 100).toFixed(2) : 0;
+
+    const yieldEl = document.getElementById('calc-gf-yield');
+    const detailEl = document.getElementById('calc-gf-detail');
+
+    if (yieldEl) {
+        yieldEl.style.color = 'var(--green)';
+        yieldEl.textContent = `${grossYield}%`;
+        detailEl.textContent = `$${totalWeeklyRent.toLocaleString()}/wk · $${annualIncome.toLocaleString()}/yr`;
     }
-    selectedListingId = null;
+
+    const fields = {
+        'gf-total-invest': formatCurrency(totalInvestment),
+        'gf-total-rent': `$${totalWeeklyRent}/wk`,
+        'gf-annual': formatCurrency(annualIncome),
+        'gf-yield-without': `${yieldWithout}%`,
+        'gf-yield-with': `${grossYield}%`,
+    };
+
+    Object.entries(fields).forEach(([id, val]) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = val;
+    });
+}
+
+function updateRenoCalc() {
+    const price = parseFloat(document.getElementById('calc-reno-price')?.value) || 0;
+    const renoCost = parseFloat(document.getElementById('calc-reno-cost')?.value) || 0;
+    const upliftPct = parseFloat(document.getElementById('calc-reno-uplift')?.value) || 0;
+    const months = parseInt(document.getElementById('calc-reno-months')?.value) || 6;
+
+    const stampDuty = price * 0.055;
+    const purchaseTotal = price + stampDuty + 5000; // legals
+    const totalCost = purchaseTotal + renoCost;
+
+    const holdingCost = totalCost * 0.005 * months;
+    const allInCost = totalCost + holdingCost;
+
+    const endValue = price * (1 + upliftPct / 100);
+    const sellingCosts = endValue * 0.03;
+    const profit = endValue - sellingCosts - allInCost;
+    const margin = allInCost > 0 ? ((profit / allInCost) * 100).toFixed(1) : 0;
+
+    const profitEl = document.getElementById('calc-reno-profit');
+    const detailEl = document.getElementById('calc-reno-detail');
+
+    if (profitEl) {
+        const isProfit = profit >= 0;
+        profitEl.style.color = isProfit ? 'var(--profit)' : 'var(--loss)';
+        profitEl.textContent = `${isProfit ? '+' : ''}${formatCurrency(profit)}`;
+        detailEl.style.color = isProfit ? 'var(--profit)' : 'var(--loss)';
+        detailEl.textContent = `${margin}% margin · Cost: ${formatCurrency(allInCost)} · End Value: ${formatCurrency(endValue)}`;
+    }
 }
 
 // ---- Stats Bar ----
@@ -478,14 +961,12 @@ function renderStats(data) {
         ? new Date(data.last_scan + 'Z').toLocaleDateString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
         : '—';
 
-    // Populate filter dropdowns
     populateFilters(data);
 }
 
 // ---- Filters ----
 function populateFilters(data) {
     const suburbSelect = document.getElementById('filter-suburb');
-    // Save current selections
     const current = Array.from(suburbSelect.selectedOptions).map(o => o.value);
     suburbSelect.innerHTML = '<option value="">All Suburbs</option>';
     (data.suburbs || []).forEach(s => {
@@ -540,9 +1021,11 @@ async function applyFilters() {
     const params = getFilterParams();
     try {
         const resp = await fetch(`/api/listings?${params.toString()}`);
-        filteredListings = await resp.json();
+        const data = await resp.json();
+        filteredListings = data;
         renderCards();
         updateMapMarkers();
+        if (heatmapActive) buildHeatmap();
     } catch (e) {
         console.error('Filter error:', e);
     }
@@ -557,6 +1040,20 @@ function resetFilters() {
     document.getElementById('filter-type').selectedIndex = 0;
     document.getElementById('filter-new-only').checked = false;
     applyFilters();
+}
+
+// POI coordinates are now included directly in the API response (lat/lng per POI)
+
+// ---- Mobile UI ----
+function toggleMobileFilters() {
+    const filtersBar = document.getElementById('filters-bar');
+    filtersBar.classList.toggle('mobile-visible');
+}
+
+function toggleMobileCards() {
+    const sidebar = document.getElementById('sidebar');
+    mobileCardsExpanded = !mobileCardsExpanded;
+    sidebar.classList.toggle('mobile-expanded', mobileCardsExpanded);
 }
 
 // ---- Init ----
@@ -591,7 +1088,6 @@ async function init() {
         const el = document.getElementById(id);
         if (!el) return;
         const event = el.type === 'checkbox' ? 'change' : (el.tagName === 'SELECT' ? 'change' : 'input');
-        // Debounce numeric inputs
         if (el.type === 'number') {
             let timeout;
             el.addEventListener('input', () => {
@@ -603,14 +1099,9 @@ async function init() {
         }
     });
 
-    // Modal close
-    document.getElementById('modal-overlay').addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeDetail();
-    });
-
-    // Escape key closes modal
+    // Escape key closes detail panel
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeDetail();
+        if (e.key === 'Escape') closeDetailPanel();
     });
 }
 

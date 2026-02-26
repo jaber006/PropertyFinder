@@ -10,6 +10,8 @@
     <!-- Leaflet MarkerCluster CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
 
     <!-- App CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -24,13 +26,18 @@
 </head>
 <body>
     <!-- Stats Bar -->
-    <div class="stats-bar">
+    <div class="stats-bar" id="stats-bar">
         <div class="logo">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L19.27 7.5 12 10.82 4.73 7.5 12 4.18zM4 8.82l7 3.5V19l-7-3.5V8.82zM13 19v-6.68l7-3.5V15.5L13 19z"/>
             </svg>
             PropertyFinder
         </div>
+
+        <!-- Mobile hamburger toggle -->
+        <button class="mobile-menu-toggle" id="mobile-menu-toggle" onclick="toggleMobileFilters()">
+            <i class="fas fa-bars"></i>
+        </button>
 
         <div class="stat-divider"></div>
 
@@ -73,12 +80,44 @@
         <!-- Map Panel -->
         <div class="map-panel">
             <div id="map"></div>
+            <!-- Map Legend / Layer Controls -->
+            <div class="map-legend" id="map-legend">
+                <div class="legend-title"><i class="fas fa-layer-group"></i> Layers</div>
+                <label class="legend-item">
+                    <input type="checkbox" id="layer-schools" checked onchange="toggleLayer('schools')">
+                    <span class="legend-icon school-icon">🏫</span> Schools
+                </label>
+                <label class="legend-item">
+                    <input type="checkbox" id="layer-stations" checked onchange="toggleLayer('stations')">
+                    <span class="legend-icon station-icon">🚉</span> Stations
+                </label>
+                <label class="legend-item">
+                    <input type="checkbox" id="layer-listings" checked onchange="toggleLayer('listings')">
+                    <span class="legend-icon"><i class="fas fa-map-pin" style="color:var(--accent)"></i></span> Listings
+                </label>
+                <div class="legend-divider"></div>
+                <label class="legend-item">
+                    <input type="checkbox" id="layer-heatmap" onchange="toggleHeatmap()">
+                    <span class="legend-icon"><i class="fas fa-fire" style="color:var(--orange)"></i></span> Suburb Heatmap
+                </label>
+            </div>
+        </div>
+
+        <!-- Detail Side Panel -->
+        <div class="detail-panel" id="detail-panel">
+            <div class="detail-panel-header">
+                <h2 id="detail-panel-title">Loading...</h2>
+                <button class="detail-panel-close" onclick="closeDetailPanel()"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="detail-panel-body" id="detail-panel-body">
+                <div class="loading-spinner">Loading...</div>
+            </div>
         </div>
 
         <!-- Sidebar -->
-        <div class="sidebar">
+        <div class="sidebar" id="sidebar">
             <!-- Filters -->
-            <div class="filters-bar">
+            <div class="filters-bar" id="filters-bar">
                 <div class="filter-group">
                     <label>Suburb</label>
                     <select id="filter-suburb" multiple size="1">
@@ -128,17 +167,10 @@
         </div>
     </div>
 
-    <!-- Detail Modal -->
-    <div class="modal-overlay" id="modal-overlay">
-        <div class="modal">
-            <div class="modal-header">
-                <h2 id="modal-title">Loading...</h2>
-                <button class="modal-close" onclick="closeDetail()">&times;</button>
-            </div>
-            <div class="modal-body" id="modal-body">
-                <div class="loading-spinner">Loading...</div>
-            </div>
-        </div>
+    <!-- Mobile slide-up handle -->
+    <div class="mobile-cards-handle" id="mobile-cards-handle" onclick="toggleMobileCards()">
+        <div class="handle-bar"></div>
+        <span id="mobile-cards-count">— listings</span>
     </div>
 
     <!-- Scripts -->

@@ -94,13 +94,25 @@ def format_listing(row):
     osm_data = d.get('osm_json') or {}
     if isinstance(osm_data, dict):
         pois = osm_data.get('pois', {})
+        # Include lat/lng for each POI so dashboard can render map overlays
         d['nearby_schools'] = [
-            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0), 'type': s.get('type', 'unknown')}
-            for s in pois.get('schools', [])[:5]  # Top 5 nearest
+            {
+                'name': s.get('name', ''),
+                'distance_m': s.get('distance_m', 0),
+                'type': s.get('type', 'unknown'),
+                'lat': s.get('lat'),
+                'lng': s.get('lng'),
+            }
+            for s in pois.get('schools', [])[:8]  # Top 8 nearest
         ]
         d['nearby_stations'] = [
-            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
-            for s in pois.get('stations', [])[:3]  # Top 3 nearest
+            {
+                'name': s.get('name', ''),
+                'distance_m': s.get('distance_m', 0),
+                'lat': s.get('lat'),
+                'lng': s.get('lng'),
+            }
+            for s in pois.get('stations', [])[:5]  # Top 5 nearest
         ]
         road_cls = pois.get('road_classification', {})
         d['road_type'] = road_cls.get('label', 'Unknown') if road_cls else 'Unknown'
@@ -109,17 +121,17 @@ def format_listing(row):
         d['growth_score'] = osm_data.get('growth_score', 0)
         d['location_flags'] = osm_data.get('location_flags', [])
         d['growth_flags'] = osm_data.get('growth_flags', [])
-        # Nearby amenities summary
+        # Nearby amenities summary with coordinates
         d['nearby_supermarkets'] = [
-            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0), 'lat': s.get('lat'), 'lng': s.get('lng')}
             for s in pois.get('supermarkets', [])[:3]
         ]
         d['nearby_hospitals'] = [
-            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0), 'lat': s.get('lat'), 'lng': s.get('lng')}
             for s in pois.get('hospitals', [])[:2]
         ]
         d['nearby_parks'] = [
-            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0), 'lat': s.get('lat'), 'lng': s.get('lng')}
             for s in pois.get('parks', [])[:3]
         ]
 
@@ -127,7 +139,7 @@ def format_listing(row):
     if d.get('first_seen'):
         try:
             first_seen = datetime.fromisoformat(d['first_seen'])
-            d['is_new'] = (datetime.utcnow() - first_seen) < timedelta(hours=24)
+            d['is_new'] = (datetime.now(tz=None) - first_seen) < timedelta(hours=24)
         except (ValueError, TypeError):
             d['is_new'] = False
     else:
@@ -214,17 +226,8 @@ def api_listing_detail(listing_id):
         if not row:
             return jsonify({'error': 'Not found'}), 404
 
-        d = dict(row)
-        # Parse JSON fields
-        for field in ('score_breakdown', 'development_flags', 'feasibility_json'):
-            if d.get(field) and isinstance(d[field], str):
-                try:
-                    d[field] = json.loads(d[field])
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-        d = geocode_listing(d)
-        d.pop('raw_json', None)
+        # Use format_listing to get full OSM data extraction
+        d = format_listing(row)
 
         # Get price history
         history = conn.execute(
