@@ -22,6 +22,16 @@ class ListingDB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self._setup()
+        self._migrate()
+
+    def _migrate(self):
+        """Run any needed schema migrations."""
+        # Add osm_json column if it doesn't exist
+        try:
+            self.conn.execute("SELECT osm_json FROM listings LIMIT 1")
+        except sqlite3.OperationalError:
+            self.conn.execute("ALTER TABLE listings ADD COLUMN osm_json TEXT")
+            self.conn.commit()
 
     def _setup(self):
         """Create tables if they don't exist."""
@@ -68,6 +78,8 @@ class ListingDB:
                 listing_date TEXT,
                 auction_date TEXT,
                 days_on_market INTEGER,
+
+                osm_json TEXT,
 
                 status TEXT DEFAULT 'active',
                 first_seen TEXT DEFAULT (datetime('now')),
@@ -133,6 +145,7 @@ class ListingDB:
                 'development_score', 'score_breakdown', 'development_flags',
                 'feasibility_json',
                 'listing_date', 'auction_date', 'days_on_market',
+                'osm_json',
                 'status', 'raw_json'
             ]
             vals = [listing.get(c) for c in cols]
@@ -164,6 +177,8 @@ class ListingDB:
                     price_display = ?, price_low = ?, price_high = ?,
                     development_score = ?, score_breakdown = ?,
                     development_flags = ?, feasibility_json = ?,
+                    lat = COALESCE(?, lat), lng = COALESCE(?, lng),
+                    osm_json = COALESCE(?, osm_json),
                     last_seen = datetime('now'), status = 'active',
                     raw_json = ?
                 WHERE id = ?
@@ -173,6 +188,8 @@ class ListingDB:
                 listing.get('score_breakdown'),
                 listing.get('development_flags'),
                 listing.get('feasibility_json'),
+                listing.get('lat'), listing.get('lng'),
+                listing.get('osm_json'),
                 listing.get('raw_json'),
                 lid
             ))

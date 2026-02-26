@@ -1,17 +1,24 @@
 """
-Development Opportunity Scorer
+Development Opportunity Scorer v2
 
-Scores each listing 0-100 for development potential:
-- Land size (wider/larger = more potential)
-- Estimated frontage
-- Price vs land value ratio
-- Dwelling age (older = more likely knockdown)
-- Zoning (R3/R4/RGZ = medium+ density)
-- Keywords (DA approved, development potential, etc.)
+Scores each listing 0-100 for development potential using four categories:
+
+1. Land/Development Potential (0-35 pts):
+   - Land size, frontage, zoning, keywords, dwelling age
+
+2. Price/Value (0-20 pts):
+   - Price relative to region/suburb median
+
+3. Location Quality (0-30 pts):  ← NEW — OSM-based
+   - Transport proximity, school proximity, amenities, street quality
+
+4. Growth Potential (0-15 pts):  ← NEW
+   - Infrastructure projects, ripple effect
 """
 
 import re
 import json
+import os
 from typing import Dict, List, Optional, Tuple
 
 
@@ -59,15 +66,12 @@ class DevelopmentScorer:
 
     def __init__(self, config: Dict = None):
         self.config = config or {}
-        self.weights = self.config.get('scoring', {
-            'land_size_weight': 0.25,
-            'frontage_weight': 0.15,
-            'price_value_weight': 0.15,
-            'dwelling_age_weight': 0.15,
-            'zoning_weight': 0.15,
-            'keyword_weight': 0.10,
-            'feasibility_weight': 0.05,
-        })
+        # Location intelligence is injected externally during rescore
+        self._location_intel = None
+
+    def set_location_intel(self, location_intel):
+        """Inject the LocationIntelligence instance (for OSM scoring)."""
+        self._location_intel = location_intel
 
     def score(self, listing: Dict) -> Tuple[float, Dict, List[str]]:
         """
@@ -82,55 +86,126 @@ class DevelopmentScorer:
         breakdown = {}
         flags = []
 
-        # 1. Land size score (25%)
-        land_score, land_flags = self._score_land_size(listing)
-        breakdown['land_size'] = land_score
+        # ═══════════════════════════════════════════════════════
+        # CATEGORY 1: Land/Development Potential (0-35 points)
+        # ═══════════════════════════════════════════════════════
+        
+        # 1a. Land size (0-100 raw → weighted to ~10pts)
+        land_raw, land_flags = self._score_land_size(listing)
         flags.extend(land_flags)
 
-        # 2. Frontage score (15%)
-        frontage_score, frontage_flags = self._score_frontage(listing)
-        breakdown['frontage'] = frontage_score
+        # 1b. Frontage (0-100 raw → weighted to ~7pts)
+        frontage_raw, frontage_flags = self._score_frontage(listing)
         flags.extend(frontage_flags)
 
-        # 3. Price/value score (15%)
-        price_score, price_flags = self._score_price_value(listing)
-        breakdown['price_value'] = price_score
-        flags.extend(price_flags)
-
-        # 4. Dwelling age score (15%)
-        age_score, age_flags = self._score_dwelling_age(listing)
-        breakdown['dwelling_age'] = age_score
-        flags.extend(age_flags)
-
-        # 5. Zoning score (15%)
-        zoning_score, zoning_flags = self._score_zoning(listing)
-        breakdown['zoning'] = zoning_score
+        # 1c. Zoning (0-100 raw → weighted to ~7pts)
+        zoning_raw, zoning_flags = self._score_zoning(listing)
         flags.extend(zoning_flags)
 
-        # 6. Keyword analysis (10%)
-        keyword_score, keyword_flags = self._score_keywords(listing)
-        breakdown['keywords'] = keyword_score
+        # 1d. Dwelling age (0-100 raw → weighted to ~5pts)
+        age_raw, age_flags = self._score_dwelling_age(listing)
+        flags.extend(age_flags)
+
+        # 1e. Keywords (0-100 raw → weighted to ~6pts)
+        keyword_raw, keyword_flags = self._score_keywords(listing)
         flags.extend(keyword_flags)
 
-        # 7. Feasibility bonus (5%)
-        feas_score = self._score_feasibility_bonus(listing)
-        breakdown['feasibility'] = feas_score
-
-        # Calculate weighted total
-        total = (
-            land_score * self.weights.get('land_size_weight', 0.25) +
-            frontage_score * self.weights.get('frontage_weight', 0.15) +
-            price_score * self.weights.get('price_value_weight', 0.15) +
-            age_score * self.weights.get('dwelling_age_weight', 0.15) +
-            zoning_score * self.weights.get('zoning_weight', 0.15) +
-            keyword_score * self.weights.get('keyword_weight', 0.10) +
-            feas_score * self.weights.get('feasibility_weight', 0.05)
+        land_dev_score = (
+            land_raw * 0.10 +
+            frontage_raw * 0.07 +
+            zoning_raw * 0.07 +
+            age_raw * 0.05 +
+            keyword_raw * 0.06
         )
+        # Scale to 0-35
+        land_dev_score = min(35, land_dev_score)
+
+        breakdown['land_development'] = round(land_dev_score, 1)
+        breakdown['land_size_raw'] = land_raw
+        breakdown['frontage_raw'] = frontage_raw
+        breakdown['zoning_raw'] = zoning_raw
+        breakdown['dwelling_age_raw'] = age_raw
+        breakdown['keywords_raw'] = keyword_raw
+
+        # ═══════════════════════════════════════════════════════
+        # CATEGORY 2: Price/Value (0-20 points)
+        # ═══════════════════════════════════════════════════════
+        price_raw, price_flags = self._score_price_value(listing)
+        flags.extend(price_flags)
+        price_score = price_raw * 0.20
+        price_score = min(20, price_score)
+        breakdown['price_value'] = round(price_score, 1)
+        breakdown['price_value_raw'] = price_raw
+
+        # ═══════════════════════════════════════════════════════
+        # CATEGORY 3: Location Quality (0-30 points) — OSM
+        # ═══════════════════════════════════════════════════════
+        location_score = 0
+        location_data = listing.get('_location_data')
+        
+        if location_data:
+            location_score = location_data.get('location_score', 0)
+            loc_flags = location_data.get('location_flags', [])
+            flags.extend(loc_flags)
+            breakdown['location_quality'] = round(location_score, 1)
+            breakdown['location_breakdown'] = location_data.get('location_breakdown', {})
+        elif self._location_intel:
+            # Compute on the fly if location intel is available
+            analysis = self._location_intel.analyse_listing(listing)
+            location_score = analysis.get('location_score', 0)
+            flags.extend(analysis.get('location_flags', []))
+            breakdown['location_quality'] = round(location_score, 1)
+            breakdown['location_breakdown'] = analysis.get('location_breakdown', {})
+            # Store for later use
+            listing['_location_data'] = analysis
+        else:
+            # No location data available — give neutral score
+            location_score = 15  # Middle of 0-30 range
+            breakdown['location_quality'] = location_score
+            breakdown['location_breakdown'] = {'note': 'no OSM data available'}
+
+        # ═══════════════════════════════════════════════════════
+        # CATEGORY 4: Growth Potential (0-15 points)
+        # ═══════════════════════════════════════════════════════
+        growth_score = 0
+        
+        if location_data:
+            growth_score = location_data.get('growth_score', 0)
+            growth_flags = location_data.get('growth_flags', [])
+            flags.extend(growth_flags)
+            breakdown['growth_potential'] = round(growth_score, 1)
+            breakdown['growth_breakdown'] = location_data.get('growth_breakdown', {})
+        elif self._location_intel:
+            from analysis.osm import score_growth_potential
+            suburb = listing.get('suburb', '')
+            growth_score, growth_breakdown, growth_flags = score_growth_potential(suburb)
+            flags.extend(growth_flags)
+            breakdown['growth_potential'] = round(growth_score, 1)
+            breakdown['growth_breakdown'] = growth_breakdown
+        else:
+            growth_score = 5  # Neutral
+            breakdown['growth_potential'] = growth_score
+            breakdown['growth_breakdown'] = {'note': 'no growth data available'}
+
+        # ═══════════════════════════════════════════════════════
+        # TOTAL SCORE (0-100)
+        # ═══════════════════════════════════════════════════════
+        total = land_dev_score + price_score + location_score + growth_score
 
         # Clamp to 0-100
         total = max(0, min(100, round(total, 1)))
 
+        breakdown['total'] = total
+        breakdown['categories'] = {
+            'land_development': f'{round(land_dev_score, 1)}/35',
+            'price_value': f'{round(price_score, 1)}/20',
+            'location_quality': f'{round(location_score, 1)}/30',
+            'growth_potential': f'{round(growth_score, 1)}/15',
+        }
+
         return total, breakdown, flags
+
+    # ─── Component scorers (return 0-100 raw scores) ────────
 
     def _score_land_size(self, listing: Dict) -> Tuple[float, List[str]]:
         """Score based on land size. Bigger = better for development."""
@@ -138,7 +213,6 @@ class DevelopmentScorer:
         flags = []
 
         if not land:
-            # Try to extract from description
             land = self._extract_land_from_text(listing)
             if land:
                 flags.append(f'Land {land}m² (from description)')
@@ -172,7 +246,6 @@ class DevelopmentScorer:
         flags = []
 
         if not frontage:
-            # Estimate from keywords
             text = self._get_full_text(listing).lower()
             frontage_match = re.search(r'(\d+\.?\d*)\s*m?\s*(?:frontage|wide|front)', text)
             if frontage_match:
@@ -180,14 +253,12 @@ class DevelopmentScorer:
                 flags.append(f'Frontage ~{frontage}m (from listing text)')
 
         if not frontage:
-            # Rough estimate from land size (assume 2:3 ratio)
             land = listing.get('land_size_sqm')
             if land and land > 0:
-                frontage = (land / 1.5) ** 0.5  # sqrt(area / ratio)
-                # Don't flag estimated values
+                frontage = (land / 1.5) ** 0.5
 
         if not frontage:
-            return 40, flags  # Unknown
+            return 40, flags
 
         if frontage >= 20:
             flags.append(f'Wide frontage ~{frontage:.0f}m — easy subdivision')
@@ -210,12 +281,9 @@ class DevelopmentScorer:
         flags = []
         price = listing.get('price_low')
         if not price:
-            return 40, flags  # Unknown
+            return 40, flags
 
-        # Get region config for context
         region_name = listing.get('region_name', '')
-
-        # Check if price is below region midpoint (more room for development profit)
         regions = self.config.get('regions', [])
         region_cfg = None
         for r in regions:
@@ -251,11 +319,10 @@ class DevelopmentScorer:
         year_built = listing.get('year_built')
 
         if not year_built:
-            # Estimate from keywords
             year_built = self._estimate_era(listing)
 
         if not year_built:
-            return 50, flags  # Unknown
+            return 50, flags
 
         from datetime import datetime
         current_year = datetime.now().year
@@ -284,12 +351,11 @@ class DevelopmentScorer:
         zoning = listing.get('zoning', '')
 
         if not zoning:
-            # Try to extract from text
             text = self._get_full_text(listing).lower()
             zoning = self._extract_zoning(text)
 
         if not zoning:
-            return 40, flags  # Unknown zoning
+            return 40, flags
 
         zoning_upper = zoning.upper().strip()
 
@@ -372,35 +438,11 @@ class DevelopmentScorer:
                 elif 'easement' in kw:
                     flags.append('⚠️ Easement present')
 
-        # Calculate score
-        score = 40  # Neutral base
-        score += min(positive_count * 12, 60)  # Up to +60 for keywords
-        score -= min(negative_count * 15, 40)   # Down to -40 for negative
+        score = 40
+        score += min(positive_count * 12, 60)
+        score -= min(negative_count * 15, 40)
 
-        return max(0, min(100, score)), list(set(flags))  # Deduplicate flags
-
-    def _score_feasibility_bonus(self, listing: Dict) -> float:
-        """Bonus score if feasibility has been calculated and looks good."""
-        feas = listing.get('feasibility_json')
-        if not feas:
-            return 40
-
-        try:
-            if isinstance(feas, str):
-                feas = json.loads(feas)
-            profit_margin = feas.get('profit_margin_pct', 0)
-            if profit_margin >= 30:
-                return 100
-            elif profit_margin >= 20:
-                return 80
-            elif profit_margin >= 10:
-                return 60
-            elif profit_margin >= 0:
-                return 40
-            else:
-                return 15
-        except (json.JSONDecodeError, TypeError):
-            return 40
+        return max(0, min(100, score)), list(set(flags))
 
     # ─── Helper methods ──────────────────────────────────────────────
 
@@ -426,7 +468,7 @@ class DevelopmentScorer:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 val = float(match.group(1))
-                if 100 <= val <= 5000:  # Sanity check
+                if 100 <= val <= 5000:
                     return val
         return None
 
@@ -448,7 +490,6 @@ class DevelopmentScorer:
                 if year and 1900 <= year <= 2026:
                     return year
 
-        # Keyword-based era estimation
         era_keywords = {
             'federation': 1910,
             'californian bungalow': 1925,
@@ -494,4 +535,9 @@ class DevelopmentScorer:
             listing['development_score'] = score
             listing['score_breakdown'] = json.dumps(breakdown)
             listing['development_flags'] = json.dumps(flags)
+            
+            # Store location analysis data for DB persistence
+            loc_data = listing.get('_location_data')
+            if loc_data:
+                listing['_osm_analysis'] = loc_data
         return listings

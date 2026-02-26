@@ -93,6 +93,71 @@ feasibility:
   holding_cost_months: 18
   holding_cost_monthly_rate: 0.005  # 6% pa / 12
   selling_costs_rate: 0.03  # agent fees + marketing
+  
+  # New duplex dwelling = X% of suburb median house price
+  # (new build premium but smaller lot → net ~85%)
+  duplex_value_factor: 0.85
+  
+  # Per-suburb end value overrides (optional)
+  # If not specified, uses duplex_value_factor × median house price
+  suburb_end_values:
+    Bexley:
+      median_house: 1900000
+      duplex_each: 1600000    # $1.6M each ($3.2M total for duplex pair)
+    Arncliffe:
+      median_house: 1850000
+      duplex_each: 1550000    # $1.55M each ($3.1M total)
+    Hurstville:
+      median_house: 2000000
+      duplex_each: 1700000    # $1.7M each ($3.4M total)
+    Kogarah:
+      median_house: 1900000
+      duplex_each: 1600000
+    Rockdale:
+      median_house: 1650000
+      duplex_each: 1400000
+    Banksia:
+      median_house: 1750000
+      duplex_each: 1475000
+    Bardwell Park:
+      median_house: 1800000
+      duplex_each: 1525000
+    Bardwell Valley:
+      median_house: 1750000
+      duplex_each: 1475000
+    Carlton:
+      median_house: 1700000
+      duplex_each: 1450000
+    Beverly Hills:
+      median_house: 1750000
+      duplex_each: 1475000
+    Kingsgrove:
+      median_house: 1800000
+      duplex_each: 1525000
+    Turrella:
+      median_house: 1650000
+      duplex_each: 1400000
+    Kyeemagh:
+      median_house: 1700000
+      duplex_each: 1450000
+    Mascot:
+      median_house: 1750000
+      duplex_each: 1475000
+
+# OSM location intelligence settings
+osm:
+  # Query radii in metres
+  school_radius: 1500
+  station_radius: 2000
+  bus_stop_radius: 500
+  supermarket_radius: 1000
+  hospital_radius: 3000
+  park_radius: 500
+  road_radius: 50
+  # Cache settings
+  poi_cache_hours: 24  # Re-query POIs after this many hours
+  # Nominatim rate limit (seconds between requests)
+  nominatim_delay_sec: 1.1
 
 # Alert preferences
 alerts:

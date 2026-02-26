@@ -451,7 +451,7 @@ def cmd_dashboard(args):
 
 
 def cmd_rescore(args):
-    """Re-score all active listings with current config."""
+    """Re-score all active listings with OSM location intelligence."""
     config = load_config()
     db = ListingDB()
     scorer = DevelopmentScorer(config)
@@ -463,21 +463,180 @@ def cmd_rescore(args):
         db.close()
         return
 
-    print(f"Re-scoring {len(listings)} active listings...")
+    print(f"=" * 60)
+    print(f"PropertyFinder v2 — Enhanced Rescore with OSM Intelligence")
+    print(f"=" * 60)
+    print(f"\n{len(listings)} active listings to process.\n")
+
+    # ─── Step 1: Geocode all listings ───
+    from analysis.osm import LocationIntelligence
+    db_path = db.db_path
+    location_intel = LocationIntelligence(db_path)
+
+    print("Step 1: Geocoding listings...")
+    geocoded_count = 0
+    centroid_count = 0
+    failed_count = 0
+
+    for i, listing in enumerate(listings, 1):
+        addr = listing.get('address', '?')
+        lat, lng = location_intel.geocode_listing(listing)
+        if lat and lng:
+            listing['lat'] = lat
+            listing['lng'] = lng
+            # Check if it's a centroid or real geocode
+            from analysis.osm import SUBURB_CENTROIDS
+            centroid = SUBURB_CENTROIDS.get(listing.get('suburb', ''))
+            if centroid and abs(lat - centroid[0]) < 0.0001 and abs(lng - centroid[1]) < 0.0001:
+                centroid_count += 1
+            else:
+                geocoded_count += 1
+        else:
+            failed_count += 1
+        
+        # Progress
+        if i % 10 == 0 or i == len(listings):
+            print(f"  Geocoded {i}/{len(listings)} "
+                  f"(precise: {geocoded_count}, centroid: {centroid_count}, failed: {failed_count})")
+
+    print(f"\n  Results: {geocoded_count} precise, {centroid_count} centroid fallback, {failed_count} failed\n")
+
+    # ─── Step 2: Query OSM for POIs ───
+    print("Step 2: Querying OSM for nearby POIs...")
+    osm_count = 0
+    cached_count = 0
+
+    for i, listing in enumerate(listings, 1):
+        lat = listing.get('lat')
+        lng = listing.get('lng')
+        if not lat or not lng:
+            listing['_location_data'] = {
+                'location_score': 0, 'location_breakdown': {},
+                'location_flags': [], 'growth_score': 0,
+                'growth_breakdown': {}, 'growth_flags': [],
+                'pois': {},
+            }
+            continue
+
+        analysis = location_intel.analyse_listing(listing)
+        listing['_location_data'] = analysis
+        
+        # Check if it was cached or fresh
+        cache_key = f"{lat:.4f},{lng:.4f}"
+        if location_intel.cache.get_pois(cache_key):
+            cached_count += 1
+        else:
+            osm_count += 1
+
+        if i % 10 == 0 or i == len(listings):
+            print(f"  Analysed {i}/{len(listings)} (fresh queries: {osm_count}, cached: {cached_count})")
+
+    print(f"\n  Done: {osm_count} fresh OSM queries, {cached_count} from cache\n")
+
+    # ─── Step 3: Score with new data ───
+    print("Step 3: Scoring with location + growth data...")
+    scorer.set_location_intel(location_intel)
     scored = scorer.score_listings(listings)
     scored = feasibility.estimate_listings(scored)
+
+    # ─── Step 4: Save to DB (update lat/lng + scores + OSM data) ───
+    print("Step 4: Saving to database...")
+    
+    for listing in scored:
+        # Persist OSM analysis as JSON alongside the listing
+        osm_data = listing.get('_location_data', {})
+        if osm_data:
+            listing['osm_json'] = json.dumps({
+                'location_score': osm_data.get('location_score', 0),
+                'location_breakdown': osm_data.get('location_breakdown', {}),
+                'location_flags': osm_data.get('location_flags', []),
+                'growth_score': osm_data.get('growth_score', 0),
+                'growth_breakdown': osm_data.get('growth_breakdown', {}),
+                'growth_flags': osm_data.get('growth_flags', []),
+                'pois': osm_data.get('pois', {}),
+            })
+    
     counts = db.bulk_upsert(scored)
 
-    print(f"Done. Updated {counts['updated'] + counts['unchanged']} listings.")
+    # Also update lat/lng and osm_json directly (since bulk_upsert may not update these)
+    for listing in scored:
+        lid = listing.get('id')
+        if lid and (listing.get('lat') or listing.get('osm_json')):
+            try:
+                db.conn.execute(
+                    "UPDATE listings SET lat=?, lng=?, osm_json=? WHERE id=?",
+                    (listing.get('lat'), listing.get('lng'), listing.get('osm_json'), lid)
+                )
+            except Exception:
+                # osm_json column might not exist yet
+                try:
+                    db.conn.execute("ALTER TABLE listings ADD COLUMN osm_json TEXT")
+                    db.conn.execute(
+                        "UPDATE listings SET lat=?, lng=?, osm_json=? WHERE id=?",
+                        (listing.get('lat'), listing.get('lng'), listing.get('osm_json'), lid)
+                    )
+                except Exception:
+                    pass
+    db.conn.commit()
 
-    # Show top 5
-    top5 = sorted(scored, key=lambda x: x.get('development_score', 0), reverse=True)[:5]
-    if top5:
-        print(f"\nTop 5:")
-        for i, l in enumerate(top5, 1):
-            print(f"  {i}. [{l.get('development_score', 0)}/100] {l.get('address', '?')}")
+    print(f"\n  Updated {counts['updated'] + counts['unchanged']} listings.")
 
+    # ─── Show results ───
+    top10 = sorted(scored, key=lambda x: x.get('development_score', 0), reverse=True)[:10]
+    if top10:
+        print(f"\n{'=' * 60}")
+        print(f"Top 10 Development Opportunities (with OSM scoring):")
+        print(f"{'=' * 60}")
+        for i, l in enumerate(top10, 1):
+            score = l.get('development_score', 0)
+            addr = l.get('address', '?')
+            suburb = l.get('suburb', '')
+            price = l.get('price_display', '?')
+            land = l.get('land_size_sqm')
+            land_str = f"{land:.0f}sqm" if land else '?'
+
+            # Get breakdown from score_breakdown
+            try:
+                bd = json.loads(l.get('score_breakdown', '{}'))
+                cats = bd.get('categories', {})
+                cat_str = ' | '.join(f"{k}: {v}" for k, v in cats.items()) if cats else ''
+            except (json.JSONDecodeError, TypeError):
+                cat_str = ''
+
+            # Feasibility
+            feas_str = ''
+            if l.get('feasibility_json'):
+                try:
+                    feas = json.loads(l['feasibility_json']) if isinstance(l['feasibility_json'], str) else l['feasibility_json']
+                    profit = feas.get('profit', 0)
+                    margin = feas.get('profit_margin_pct', 0)
+                    end_val = feas.get('end_value', 0)
+                    status = 'PROFIT' if profit > 0 else 'LOSS'
+                    feas_str = f"→ End value ${end_val:,.0f} = {status} ${abs(profit):,.0f} ({margin}%)"
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            # Location flags
+            loc_flags = []
+            osm_data = l.get('_location_data', {})
+            loc_flags.extend(osm_data.get('location_flags', [])[:3])
+            loc_flags.extend(osm_data.get('growth_flags', [])[:2])
+            flags_str = ' | '.join(loc_flags) if loc_flags else ''
+
+            print(f"\n  {i:>2}. [{score}/100] {addr}, {suburb}")
+            print(f"      {price} | Land: {land_str}")
+            if cat_str:
+                print(f"      Scores: {cat_str}")
+            if feas_str:
+                print(f"      {feas_str}")
+            if flags_str:
+                print(f"      {flags_str}")
+
+    location_intel.close()
     db.close()
+    print(f"\n{'=' * 60}")
+    print(f"Rescore complete!")
+    print(f"{'=' * 60}")
 
 
 def main():

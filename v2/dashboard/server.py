@@ -76,19 +76,52 @@ def geocode_listing(listing):
 
 
 def format_listing(row):
-    """Convert a DB row to a JSON-friendly dict with geocoding."""
+    """Convert a DB row to a JSON-friendly dict with geocoding and OSM data."""
     d = dict(row)
 
     # Parse JSON fields
-    for field in ('score_breakdown', 'development_flags', 'feasibility_json'):
+    for field in ('score_breakdown', 'development_flags', 'feasibility_json', 'osm_json'):
         if d.get(field) and isinstance(d[field], str):
             try:
                 d[field] = json.loads(d[field])
             except (json.JSONDecodeError, TypeError):
                 pass
 
-    # Geocode if needed
+    # Geocode if needed (fallback to centroid if no lat/lng from OSM geocoding)
     d = geocode_listing(d)
+
+    # Extract OSM-specific data for the API response
+    osm_data = d.get('osm_json') or {}
+    if isinstance(osm_data, dict):
+        pois = osm_data.get('pois', {})
+        d['nearby_schools'] = [
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0), 'type': s.get('type', 'unknown')}
+            for s in pois.get('schools', [])[:5]  # Top 5 nearest
+        ]
+        d['nearby_stations'] = [
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            for s in pois.get('stations', [])[:3]  # Top 3 nearest
+        ]
+        road_cls = pois.get('road_classification', {})
+        d['road_type'] = road_cls.get('label', 'Unknown') if road_cls else 'Unknown'
+        d['road_name'] = road_cls.get('road_name', '') if road_cls else ''
+        d['location_score'] = osm_data.get('location_score', 0)
+        d['growth_score'] = osm_data.get('growth_score', 0)
+        d['location_flags'] = osm_data.get('location_flags', [])
+        d['growth_flags'] = osm_data.get('growth_flags', [])
+        # Nearby amenities summary
+        d['nearby_supermarkets'] = [
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            for s in pois.get('supermarkets', [])[:3]
+        ]
+        d['nearby_hospitals'] = [
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            for s in pois.get('hospitals', [])[:2]
+        ]
+        d['nearby_parks'] = [
+            {'name': s.get('name', ''), 'distance_m': s.get('distance_m', 0)}
+            for s in pois.get('parks', [])[:3]
+        ]
 
     # Check if new (first_seen within last 24h)
     if d.get('first_seen'):
@@ -100,9 +133,10 @@ def format_listing(row):
     else:
         d['is_new'] = False
 
-    # Remove raw_json to reduce payload
+    # Remove raw_json to reduce payload (keep osm_json parsed above)
     d.pop('raw_json', None)
     d.pop('description', None)
+    d.pop('osm_json', None)  # Already extracted into separate fields
 
     return d
 
