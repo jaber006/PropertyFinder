@@ -33,7 +33,10 @@ class ListingImporter:
             return self._import_generic_list(data, region_name)
         elif isinstance(data, dict):
             # Detect format
-            if 'listings' in data and 'scrape_date' in data:
+            if 'listings' in data and data.get('source') == 'domain_browser':
+                # Domain browser scrape — listings are already in DB schema
+                return self._import_domain_browser(data, region_name)
+            elif 'listings' in data and 'scrape_date' in data:
                 return self._import_stgeorge_format(data, region_name)
             elif 'listings' in data and 'scrapeDate' in data:
                 return self._import_rea_format(data, region_name)
@@ -55,6 +58,19 @@ class ListingImporter:
                 all_listings.extend(listings)
                 print(f"     → {len(listings)} listings")
         return all_listings
+
+    def _import_domain_browser(self, data: Dict, region_name: str) -> List[Dict]:
+        """Import from domain_browser scrape — listings already in DB schema format."""
+        listings = []
+        for item in data.get('listings', []):
+            # Already has all required fields; just normalize suburb case
+            if item.get('suburb'):
+                item['suburb'] = item['suburb'].title()
+            # Ensure region_name is set
+            if region_name and not item.get('region_name'):
+                item['region_name'] = region_name
+            listings.append(item)
+        return listings
 
     def _import_stgeorge_format(self, data: Dict, region_name: str) -> List[Dict]:
         """Import from the stgeorge-scrape JSON format."""
